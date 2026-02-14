@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Account__c</fullName>
+    <description>The account context for this relationship strength calculation.</description>
+    <label>Account</label>
+    <referenceTo>Account</referenceTo>
+    <relationshipLabel>Relationship Strengths</relationshipLabel>
+    <relationshipName>Relationship_Strengths</relationshipName>
+    <required>true</required>
+    <type>Lookup</type>
+</CustomField>

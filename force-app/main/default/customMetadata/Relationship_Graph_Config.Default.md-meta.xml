@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomMetadata xmlns="http://soap.sforce.com/2006/04/metadata" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <label>Default</label>
+    <protected>false</protected>
+    <values>
+        <field>Classification_Provider__c</field>
+        <value xsi:type="xsd:string">AgentforceClassificationProvider</value>
+    </values>
+    <values>
+        <field>Activity_Threshold_Days__c</field>
+        <value xsi:type="xsd:double">90.0</value>
+    </values>
+    <values>
+        <field>Min_Interactions__c</field>
+        <value xsi:type="xsd:double">3.0</value>
+    </values>
+    <values>
+        <field>Time_Decay_Factor__c</field>
+        <value xsi:type="xsd:double">0.95</value>
+    </values>
+    <values>
+        <field>Cache_TTL_Minutes__c</field>
+        <value xsi:type="xsd:double">60.0</value>
+    </values>
+</CustomMetadata>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Configuration for the Relationship Graph solution including AI provider selection and thresholds.</description>
+    <label>Relationship Graph Config</label>
+    <pluralLabel>Relationship Graph Configs</pluralLabel>
+    <visibility>Public</visibility>
+</CustomObject>

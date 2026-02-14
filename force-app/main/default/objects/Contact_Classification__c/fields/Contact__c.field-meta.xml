@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Contact__c</fullName>
+    <description>The contact being classified.</description>
+    <label>Contact</label>
+    <referenceTo>Contact</referenceTo>
+    <relationshipLabel>Classifications</relationshipLabel>
+    <relationshipName>Classifications</relationshipName>
+    <required>true</required>
+    <type>Lookup</type>
+</CustomField>

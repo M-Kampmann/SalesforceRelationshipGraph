@@ -1,0 +1,173 @@
+/* ─── Main Layout ────────────────────────────────────────────────── */
+:host {
+    display: block;
+    width: 100%;
+}
+
+.graph-container {
+    position: relative;
+    width: 100%;
+    height: 600px;
+    background: #fafafa;
+    border: 1px solid #e5e5e5;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.canvas-wrapper {
+    width: 100%;
+    height: 100%;
+}
+
+canvas {
+    display: block;
+}
+
+/* ─── Toolbar ────────────────────────────────────────────────────── */
+.toolbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.threshold-control {
+    width: 160px;
+}
+
+/* ─── Filter Bar ─────────────────────────────────────────────────── */
+.filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 16px;
+    border-bottom: 1px solid #e5e5e5;
+}
+
+.filter-badge {
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+}
+
+.filter-badge:hover {
+    opacity: 0.8;
+}
+
+.filter-active {
+    opacity: 1;
+    font-weight: bold;
+}
+
+/* ─── Classification Colors ──────────────────────────────────────── */
+.classification-champion { --sds-c-badge-color-background: #2e7d32; --sds-c-badge-text-color: #fff; }
+.classification-economic-buyer { --sds-c-badge-color-background: #1565c0; --sds-c-badge-text-color: #fff; }
+.classification-technical-buyer { --sds-c-badge-color-background: #6a1b9a; --sds-c-badge-text-color: #fff; }
+.classification-blocker { --sds-c-badge-color-background: #c62828; --sds-c-badge-text-color: #fff; }
+.classification-influencer { --sds-c-badge-color-background: #ef6c00; --sds-c-badge-text-color: #fff; }
+.classification-end-user { --sds-c-badge-color-background: #78909c; --sds-c-badge-text-color: #fff; }
+.classification-detractor { --sds-c-badge-color-background: #b71c1c; --sds-c-badge-text-color: #fff; }
+.classification-unknown { --sds-c-badge-color-background: #9e9e9e; --sds-c-badge-text-color: #fff; }
+
+/* ─── Detail Panel ───────────────────────────────────────────────── */
+.detail-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 320px;
+    height: 100%;
+    background: #fff;
+    border-left: 1px solid #e5e5e5;
+    box-shadow: -2px 0 8px rgba(0, 0, 0, 0.1);
+    overflow-y: auto;
+    z-index: 10;
+}
+
+.detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px;
+    border-bottom: 1px solid #e5e5e5;
+    background: #f8f8f8;
+}
+
+.detail-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.detail-body {
+    padding: 16px;
+}
+
+.detail-field {
+    margin: 0 0 12px;
+}
+
+.detail-label {
+    display: block;
+    font-size: 11px;
+    color: #706e6b;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 2px;
+}
+
+.detail-value {
+    display: block;
+    font-size: 14px;
+    color: #181818;
+}
+
+.confidence-score {
+    font-size: 12px;
+    color: #706e6b;
+    margin-left: 4px;
+}
+
+.override-section {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid #e5e5e5;
+}
+
+.detail-actions {
+    margin-top: 16px;
+}
+
+/* ─── Legend ──────────────────────────────────────────────────────── */
+.legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 16px;
+    font-size: 12px;
+    color: #706e6b;
+}
+
+.legend-title {
+    font-weight: 600;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.legend-swatch {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+}
+
+/* ─── Stats Bar ──────────────────────────────────────────────────── */
+.stats-bar {
+    display: flex;
+    gap: 16px;
+    font-size: 12px;
+    color: #706e6b;
+}

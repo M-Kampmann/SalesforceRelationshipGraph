@@ -1,0 +1,157 @@
+<template>
+    <lightning-card title="Relationship Graph" icon-name="custom:custom15">
+        <!-- Toolbar -->
+        <div slot="actions" class="toolbar">
+            <lightning-button-group>
+                <lightning-button
+                    label="Refresh"
+                    icon-name="utility:refresh"
+                    onclick={handleRefresh}
+                    disabled={isLoading}>
+                </lightning-button>
+                <lightning-button
+                    label={hidePassiveLabel}
+                    icon-name={hidePassiveIcon}
+                    onclick={toggleHidePassive}
+                    variant={hidePassive ? 'brand' : 'neutral'}>
+                </lightning-button>
+            </lightning-button-group>
+
+            <!-- Activity Threshold Slider -->
+            <div class="threshold-control">
+                <lightning-slider
+                    label="Min Interactions"
+                    min="0"
+                    max="20"
+                    value={minInteractions}
+                    onchange={handleThresholdChange}
+                    step="1"
+                    size="small">
+                </lightning-slider>
+            </div>
+        </div>
+
+        <!-- Filter Bar -->
+        <div class="filter-bar">
+            <template for:each={classificationFilters} for:item="filter">
+                <lightning-badge
+                    key={filter.value}
+                    label={filter.label}
+                    class={filter.cssClass}
+                    onclick={handleFilterClick}
+                    data-classification={filter.value}>
+                </lightning-badge>
+            </template>
+        </div>
+
+        <!-- Main Content -->
+        <div class="graph-container">
+            <!-- Loading Spinner -->
+            <template if:true={isLoading}>
+                <lightning-spinner alternative-text="Loading graph..." size="large">
+                </lightning-spinner>
+            </template>
+
+            <!-- Graph Canvas -->
+            <div class="canvas-wrapper" lwc:dom="manual" lwc:ref="canvasContainer">
+            </div>
+
+            <!-- Node Detail Panel (slide-in) -->
+            <template if:true={selectedNode}>
+                <div class="detail-panel">
+                    <div class="detail-header">
+                        <h3>{selectedNode.name}</h3>
+                        <lightning-button-icon
+                            icon-name="utility:close"
+                            alternative-text="Close"
+                            onclick={closeDetailPanel}
+                            size="small">
+                        </lightning-button-icon>
+                    </div>
+                    <div class="detail-body">
+                        <template if:true={selectedNode.title}>
+                            <p class="detail-field">
+                                <span class="detail-label">Title</span>
+                                <span class="detail-value">{selectedNode.title}</span>
+                            </p>
+                        </template>
+                        <template if:true={selectedNode.email}>
+                            <p class="detail-field">
+                                <span class="detail-label">Email</span>
+                                <span class="detail-value">{selectedNode.email}</span>
+                            </p>
+                        </template>
+                        <template if:true={selectedNode.classification}>
+                            <p class="detail-field">
+                                <span class="detail-label">Classification</span>
+                                <lightning-badge
+                                    label={selectedNode.classification}
+                                    class={selectedNodeClassificationClass}>
+                                </lightning-badge>
+                                <template if:true={selectedNode.confidence}>
+                                    <span class="confidence-score">
+                                        ({formattedConfidence}% confidence)
+                                    </span>
+                                </template>
+                            </p>
+                        </template>
+                        <template if:true={selectedNode.interactionCount}>
+                            <p class="detail-field">
+                                <span class="detail-label">Interactions</span>
+                                <span class="detail-value">{selectedNode.interactionCount}</span>
+                            </p>
+                        </template>
+                        <template if:true={selectedNode.coOccurrenceCount}>
+                            <p class="detail-field">
+                                <span class="detail-label">Co-occurrences</span>
+                                <span class="detail-value">{selectedNode.coOccurrenceCount}</span>
+                            </p>
+                        </template>
+
+                        <!-- Classification Override -->
+                        <template if:true={isContactNode}>
+                            <div class="override-section">
+                                <lightning-combobox
+                                    label="Override Classification"
+                                    value={selectedNode.classification}
+                                    options={classificationOptions}
+                                    onchange={handleClassificationOverride}>
+                                </lightning-combobox>
+                            </div>
+                        </template>
+
+                        <!-- Navigate to Record -->
+                        <div class="detail-actions">
+                            <lightning-button
+                                label="View Record"
+                                variant="brand"
+                                onclick={navigateToRecord}
+                                icon-name="utility:new_window">
+                            </lightning-button>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+
+        <!-- Legend -->
+        <div class="legend">
+            <span class="legend-title">Legend:</span>
+            <template for:each={legendItems} for:item="item">
+                <span key={item.label} class="legend-item">
+                    <span class={item.swatchClass} style={item.swatchStyle}></span>
+                    {item.label}
+                </span>
+            </template>
+        </div>
+
+        <!-- Stats Bar -->
+        <div class="stats-bar" slot="footer">
+            <span>Nodes: {nodeCount}</span>
+            <span>Edges: {edgeCount}</span>
+            <template if:true={hidePassive}>
+                <span>Hidden: {hiddenCount} passive contacts</span>
+            </template>
+        </div>
+    </lightning-card>
+</template>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Source_Contact__c</fullName>
+    <description>The source contact in this relationship.</description>
+    <label>Source Contact</label>
+    <referenceTo>Contact</referenceTo>
+    <relationshipLabel>Outgoing Relationships</relationshipLabel>
+    <relationshipName>Outgoing_Relationships</relationshipName>
+    <required>true</required>
+    <type>Lookup</type>
+</CustomField>

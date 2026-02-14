@@ -1,0 +1,30 @@
+# Salesforce DX
+.sfdx/
+.sf/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+
+# Logs
+*.log
+
+# Scratch org snapshots
+.localdevserver/
+
+# LWC Jest
+coverage/
+__tests__/
+
+# PDF (PRD - not source code)
+*.pdf

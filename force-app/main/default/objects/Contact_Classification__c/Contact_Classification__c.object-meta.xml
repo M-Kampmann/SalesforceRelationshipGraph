@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <deploymentStatus>Deployed</deploymentStatus>
+    <description>Stores AI-generated or heuristic contact role classifications for the Relationship Graph.</description>
+    <label>Contact Classification</label>
+    <nameField>
+        <displayFormat>CC-{0000}</displayFormat>
+        <label>Classification Number</label>
+        <type>AutoNumber</type>
+    </nameField>
+    <pluralLabel>Contact Classifications</pluralLabel>
+    <sharingModel>ReadWrite</sharingModel>
+    <visibility>Public</visibility>
+</CustomObject>
