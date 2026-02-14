@@ -1,0 +1,10 @@
+{
+  "orgName": "RelationshipGraph Dev",
+  "edition": "Developer",
+  "features": ["ContactsToMultipleAccounts"],
+  "settings": {
+    "lightningExperienceSettings": {
+      "enableS1DesktopEnabled": true
+    }
+  }
+}
