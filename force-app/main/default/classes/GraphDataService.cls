@@ -88,6 +88,9 @@ public with sharing class GraphDataService {
             ));
             graph.nodes[graph.nodes.size() - 1].confidence = confidence;
             graph.nodes[graph.nodes.size() - 1].email = c.Email;
+            if (rs != null && rs.Strength_Reason__c != null) {
+                graph.nodes[graph.nodes.size() - 1].strengthReason = rs.Strength_Reason__c;
+            }
 
             includedContactIds.add(c.Id);
         }
@@ -173,7 +176,7 @@ public with sharing class GraphDataService {
 
         for (Relationship_Strength__c rs : [
             SELECT Source_Contact__c, Strength__c, Interaction_Count__c,
-                   Co_Occurrence_Count__c, Last_Interaction_Date__c
+                   Co_Occurrence_Count__c, Last_Interaction_Date__c, Strength_Reason__c
             FROM Relationship_Strength__c
             WHERE Account__c = :accountId
             AND Source_Contact__c IN :contactIds
@@ -271,6 +274,7 @@ public with sharing class GraphDataService {
         @AuraEnabled public String email { get; set; }
         @AuraEnabled public Decimal amount { get; set; }         // For Opportunity nodes
         @AuraEnabled public Date closeDate { get; set; }         // For Opportunity nodes
+        @AuraEnabled public String strengthReason { get; set; }  // AI-generated explanation
 
         public GraphNode(
             Id recordId, String name, String nodeType, String classification,

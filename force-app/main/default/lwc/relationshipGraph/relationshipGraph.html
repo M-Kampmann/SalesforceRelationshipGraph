@@ -1,7 +1,7 @@
 <template>
     <lightning-card title="Relationship Graph" icon-name="custom:custom15">
         <!-- Toolbar -->
-        <div slot="actions" class="toolbar">
+        <div slot="actions">
             <lightning-button-group>
                 <lightning-button
                     label="Refresh"
@@ -16,32 +16,31 @@
                     variant={hidePassiveVariant}>
                 </lightning-button>
             </lightning-button-group>
-
-            <!-- Activity Threshold Slider -->
-            <div class="threshold-control">
-                <lightning-slider
-                    label="Min Interactions"
-                    min="0"
-                    max="20"
-                    value={minInteractions}
-                    onchange={handleThresholdChange}
-                    step="1"
-                    size="small">
-                </lightning-slider>
-            </div>
         </div>
 
-        <!-- Filter Bar -->
-        <div class="filter-bar">
+        <!-- Filter (color-coded badges = legend) -->
+        <div class="filter-legend">
             <template for:each={classificationFilters} for:item="filter">
-                <lightning-badge
+                <span
                     key={filter.value}
-                    label={filter.label}
                     class={filter.cssClass}
+                    style={filter.badgeStyle}
                     onclick={handleFilterClick}
                     data-classification={filter.value}>
-                </lightning-badge>
+                    {filter.label}
+                </span>
             </template>
+            <lightning-input
+                class="threshold-control"
+                type="number"
+                label="Min"
+                min="0"
+                max="20"
+                value={minInteractions}
+                onchange={handleThresholdChange}
+                step="1"
+                variant="label-inline">
+            </lightning-input>
         </div>
 
         <!-- Main Content -->
@@ -54,6 +53,31 @@
 
             <!-- Graph Canvas -->
             <div class="canvas-wrapper" lwc:dom="manual" lwc:ref="canvasContainer">
+            </div>
+
+            <!-- Zoom Controls -->
+            <div class="zoom-controls">
+                <lightning-button-icon
+                    icon-name="utility:add"
+                    alternative-text="Zoom in"
+                    onclick={handleZoomIn}
+                    size="small"
+                    variant="border-filled">
+                </lightning-button-icon>
+                <lightning-button-icon
+                    icon-name="utility:dash"
+                    alternative-text="Zoom out"
+                    onclick={handleZoomOut}
+                    size="small"
+                    variant="border-filled">
+                </lightning-button-icon>
+                <lightning-button-icon
+                    icon-name="utility:home"
+                    alternative-text="Reset zoom"
+                    onclick={handleZoomReset}
+                    size="small"
+                    variant="border-filled">
+                </lightning-button-icon>
             </div>
 
             <!-- Node Detail Panel (slide-in) -->
@@ -81,19 +105,41 @@
                                 <span class="detail-value">{selectedNode.email}</span>
                             </p>
                         </template>
-                        <template if:true={selectedNode.classification}>
+                        <!-- Contact: Classification badge -->
+                        <template if:true={isContactNode}>
+                            <template if:true={selectedNode.classification}>
+                                <p class="detail-field">
+                                    <span class="detail-label">Classification</span>
+                                    <lightning-badge
+                                        label={selectedNode.classification}
+                                        class={selectedNodeClassificationClass}>
+                                    </lightning-badge>
+                                    <template if:true={selectedNode.confidence}>
+                                        <span class="confidence-score">
+                                            ({formattedConfidence}% confidence)
+                                        </span>
+                                    </template>
+                                </p>
+                            </template>
+                        </template>
+                        <!-- Opportunity: Stage, Amount, Close Date -->
+                        <template if:true={isOpportunityNode}>
                             <p class="detail-field">
-                                <span class="detail-label">Classification</span>
-                                <lightning-badge
-                                    label={selectedNode.classification}
-                                    class={selectedNodeClassificationClass}>
-                                </lightning-badge>
-                                <template if:true={selectedNode.confidence}>
-                                    <span class="confidence-score">
-                                        ({formattedConfidence}% confidence)
-                                    </span>
-                                </template>
+                                <span class="detail-label">Stage</span>
+                                <span class="detail-value">{selectedNode.classification}</span>
                             </p>
+                            <template if:true={formattedAmount}>
+                                <p class="detail-field">
+                                    <span class="detail-label">Amount</span>
+                                    <span class="detail-value">{formattedAmount}</span>
+                                </p>
+                            </template>
+                            <template if:true={formattedCloseDate}>
+                                <p class="detail-field">
+                                    <span class="detail-label">Close Date</span>
+                                    <span class="detail-value">{formattedCloseDate}</span>
+                                </p>
+                            </template>
                         </template>
                         <template if:true={selectedNode.interactionCount}>
                             <p class="detail-field">
@@ -105,6 +151,14 @@
                             <p class="detail-field">
                                 <span class="detail-label">Co-occurrences</span>
                                 <span class="detail-value">{selectedNode.coOccurrenceCount}</span>
+                            </p>
+                        </template>
+
+                        <!-- Strength Reason -->
+                        <template if:true={selectedNode.strengthReason}>
+                            <p class="detail-field">
+                                <span class="detail-label">Connection Insight</span>
+                                <span class="detail-value detail-reason">{selectedNode.strengthReason}</span>
                             </p>
                         </template>
 
@@ -131,17 +185,6 @@
                         </div>
                     </div>
                 </div>
-            </template>
-        </div>
-
-        <!-- Legend -->
-        <div class="legend">
-            <span class="legend-title">Legend:</span>
-            <template for:each={legendItems} for:item="item">
-                <span key={item.label} class="legend-item">
-                    <span class={item.swatchClass} style={item.swatchStyle}></span>
-                    {item.label}
-                </span>
             </template>
         </div>
 

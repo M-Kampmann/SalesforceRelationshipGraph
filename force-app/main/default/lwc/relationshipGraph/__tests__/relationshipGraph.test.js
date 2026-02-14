@@ -338,20 +338,20 @@ describe('c-relationship-graph', () => {
             await flushPromises();
 
             const badges = element.shadowRoot.querySelectorAll(
-                '.filter-bar lightning-badge'
+                '.filter-legend .filter-badge'
             );
             expect(badges.length).toBe(8);
         });
     });
 
-    describe('legendItems', () => {
-        it('renders legend with Account, Opportunity, and classification entries', async () => {
+    describe('filter-legend bar', () => {
+        it('renders color-coded classification badges as legend', async () => {
             const element = createComponent({ recordId: '001xx000003DGbYAAW' });
             await flushPromises();
 
-            const legendItems = element.shadowRoot.querySelectorAll('.legend-item');
-            // Account + Opportunity + 7 classifications (minus Unknown)
-            expect(legendItems.length).toBe(9);
+            const badges = element.shadowRoot.querySelectorAll('.filter-legend .filter-badge');
+            // 8 classification types serve as both filters and legend
+            expect(badges.length).toBe(8);
         });
     });
 
@@ -467,14 +467,15 @@ describe('c-relationship-graph', () => {
 
     // ─── Slider / Threshold ──────────────────────────────────────
 
-    it('renders threshold slider', async () => {
+    it('renders threshold input', async () => {
         const element = createComponent({ recordId: '001xx000003DGbYAAW' });
         await flushPromises();
 
-        const slider = element.shadowRoot.querySelector('lightning-slider');
-        expect(slider).toBeTruthy();
-        expect(slider.min).toBe('0');
-        expect(slider.max).toBe('20');
+        const input = element.shadowRoot.querySelector('.threshold-control');
+        expect(input).toBeTruthy();
+        expect(input.type).toBe('number');
+        expect(input.min).toBe('0');
+        expect(input.max).toBe('20');
     });
 
     // ─── Detail Panel ────────────────────────────────────────────
@@ -586,7 +587,7 @@ describe('c-relationship-graph', () => {
         await flushPromises();
 
         const badges = element.shadowRoot.querySelectorAll(
-            '.filter-bar lightning-badge'
+            '.filter-legend .filter-badge'
         );
         expect(badges.length).toBeGreaterThan(0);
 

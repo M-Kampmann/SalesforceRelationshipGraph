@@ -357,6 +357,54 @@ private class RelationshipStrengthCalculatorTest {
     // ─── Edge Cases ────────────────────────────────────────────────
 
     @IsTest
+    static void testStrengthReasonGenerated() {
+        Account acct = RelationshipGraphTestDataFactory.createAccount('Test Corp');
+        List<Contact> contacts = RelationshipGraphTestDataFactory.createContacts(acct.Id, 2);
+
+        InteractionDataService.InteractionBundle bundle = new InteractionDataService.InteractionBundle();
+
+        // Contact 0: Rich interaction history
+        InteractionDataService.ContactInteractionSummary rich =
+            new InteractionDataService.ContactInteractionSummary();
+        rich.emailsSent = 10;
+        rich.emailsReceived = 15;
+        rich.meetingsAttended = 4;
+        rich.tasksCompleted = 2;
+        rich.hasOpportunityRole = true;
+        rich.opportunityRole = 'Decision Maker';
+        rich.coOccurrenceCount = 3;
+        bundle.contactSummaries.put(contacts[0].Id, rich);
+
+        // Contact 1: No interactions
+        bundle.contactSummaries.put(contacts[1].Id,
+            new InteractionDataService.ContactInteractionSummary());
+
+        List<Id> contactIds = new List<Id>{ contacts[0].Id, contacts[1].Id };
+
+        RelationshipStrengthCalculator calculator = new RelationshipStrengthCalculator();
+
+        Test.startTest();
+        calculator.calculateAndPersist(acct.Id, contactIds, bundle, 0.95);
+        Test.stopTest();
+
+        Relationship_Strength__c rsRich = [
+            SELECT Strength_Reason__c
+            FROM Relationship_Strength__c
+            WHERE Account__c = :acct.Id AND Source_Contact__c = :contacts[0].Id
+            AND Target_Object_Type__c = 'Account'
+            LIMIT 1
+        ];
+        System.assert(rsRich.Strength_Reason__c != null,
+            'Rich contact should have a strength reason');
+        System.assert(rsRich.Strength_Reason__c.contains('email'),
+            'Reason should mention emails');
+        System.assert(rsRich.Strength_Reason__c.contains('meeting'),
+            'Reason should mention meetings');
+        System.assert(rsRich.Strength_Reason__c.contains('Decision Maker'),
+            'Reason should mention opportunity role');
+    }
+
+    @IsTest
     static void testEmptyBundle() {
         Account acct = RelationshipGraphTestDataFactory.createAccount('Test Corp');
         InteractionDataService.InteractionBundle bundle = new InteractionDataService.InteractionBundle();

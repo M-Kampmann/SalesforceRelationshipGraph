@@ -362,7 +362,12 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
     drawTooltip(ctx, node) {
         const lines = [node.name];
         if (node.title) lines.push(node.title);
-        if (node.classification && node.classification !== 'Unknown') {
+        if (node.nodeType === 'Opportunity' && node.classification) {
+            lines.push('Stage: ' + node.classification);
+            if (node.amount != null) {
+                lines.push('$' + Number(node.amount).toLocaleString());
+            }
+        } else if (node.classification && node.classification !== 'Unknown') {
             lines.push(node.classification);
         }
         if (node.interactionCount) {
@@ -514,7 +519,7 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
         const mouseX = event.clientX - rect.left;
         const mouseY = event.clientY - rect.top;
 
-        const scaleFactor = event.deltaY < 0 ? 1.1 : 0.9;
+        const scaleFactor = event.deltaY < 0 ? 1.05 : 1 / 1.05;
         const newK = Math.max(0.1, Math.min(5, this.transform.k * scaleFactor));
 
         // Zoom toward mouse position
@@ -617,6 +622,29 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
         this.selectedNode = null;
     }
 
+    handleZoomIn() {
+        this._applyZoom(1.2);
+    }
+
+    handleZoomOut() {
+        this._applyZoom(1 / 1.2);
+    }
+
+    handleZoomReset() {
+        this.transform = { x: 0, y: 0, k: 1 };
+        this.renderCanvas();
+    }
+
+    _applyZoom(factor) {
+        const centerX = this.width / 2;
+        const centerY = this.height / 2;
+        const newK = Math.max(0.1, Math.min(5, this.transform.k * factor));
+        this.transform.x = centerX - (centerX - this.transform.x) * (newK / this.transform.k);
+        this.transform.y = centerY - (centerY - this.transform.y) * (newK / this.transform.k);
+        this.transform.k = newK;
+        this.renderCanvas();
+    }
+
     navigateToRecord() {
         if (this.selectedNode) {
             this.navigateToRecordById(this.selectedNode.id);
@@ -659,6 +687,22 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
         return this.selectedNode && this.selectedNode.nodeType === 'Contact';
     }
 
+    get isOpportunityNode() {
+        return this.selectedNode && this.selectedNode.nodeType === 'Opportunity';
+    }
+
+    get formattedAmount() {
+        if (!this.selectedNode || this.selectedNode.amount == null) return null;
+        return new Intl.NumberFormat('en-US', {
+            style: 'currency', currency: 'USD', maximumFractionDigits: 0
+        }).format(this.selectedNode.amount);
+    }
+
+    get formattedCloseDate() {
+        if (!this.selectedNode || !this.selectedNode.closeDate) return null;
+        return this.selectedNode.closeDate;
+    }
+
     get formattedConfidence() {
         if (!this.selectedNode || !this.selectedNode.confidence) return '0';
         return Math.round(this.selectedNode.confidence * 100);
@@ -670,13 +714,21 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
     }
 
     get classificationFilters() {
-        return Object.keys(CLASSIFICATION_COLORS).map(cls => ({
-            value: cls,
-            label: cls,
-            cssClass: 'filter-badge' +
-                (this.activeFilters.includes(cls) ? ' filter-active' : '') +
-                ' classification-' + cls.toLowerCase().replace(/\s+/g, '-')
-        }));
+        const hasActiveFilters = this.activeFilters.length > 0;
+        return Object.keys(CLASSIFICATION_COLORS).map(cls => {
+            const isActive = this.activeFilters.includes(cls);
+            let cssClass = 'filter-badge';
+            if (hasActiveFilters) {
+                cssClass += isActive ? ' filter-active' : ' filter-dimmed';
+            }
+            const color = CLASSIFICATION_COLORS[cls];
+            return {
+                value: cls,
+                label: cls,
+                cssClass,
+                badgeStyle: `background-color: ${color}; color: #fff;`
+            };
+        });
     }
 
     get classificationOptions() {
@@ -684,25 +736,6 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
             label: cls,
             value: cls
         }));
-    }
-
-    get legendItems() {
-        const items = [
-            { label: 'Account', swatchClass: 'legend-swatch', swatchStyle: 'background-color: #0176d3' },
-            { label: 'Opportunity', swatchClass: 'legend-swatch', swatchStyle: 'background-color: #ff9800' }
-        ];
-
-        Object.entries(CLASSIFICATION_COLORS).forEach(([label, color]) => {
-            if (label !== 'Unknown') {
-                items.push({
-                    label,
-                    swatchClass: 'legend-swatch',
-                    swatchStyle: `background-color: ${color}`
-                });
-            }
-        });
-
-        return items;
     }
 
     // ─── Helpers ────────────────────────────────────────────────────

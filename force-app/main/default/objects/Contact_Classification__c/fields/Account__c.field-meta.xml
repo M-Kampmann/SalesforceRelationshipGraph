@@ -8,4 +8,5 @@
     <relationshipName>Contact_Classifications</relationshipName>
     <required>true</required>
     <type>Lookup</type>
+    <deleteConstraint>Restrict</deleteConstraint>
 </CustomField>

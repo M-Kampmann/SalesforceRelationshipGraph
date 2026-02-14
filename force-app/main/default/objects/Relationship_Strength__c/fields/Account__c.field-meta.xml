@@ -8,4 +8,5 @@
     <relationshipName>Relationship_Strengths</relationshipName>
     <required>true</required>
     <type>Lookup</type>
+    <deleteConstraint>Restrict</deleteConstraint>
 </CustomField>

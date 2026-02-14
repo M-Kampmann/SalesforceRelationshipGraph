@@ -116,6 +116,7 @@ public with sharing class RelationshipStrengthCalculator {
             rs.Interaction_Count__c = summary != null ? summary.getTotalInteractions() : 0;
             rs.Co_Occurrence_Count__c = summary != null ? summary.coOccurrenceCount : 0;
             rs.Last_Calculated__c = now;
+            rs.Strength_Reason__c = generateStrengthReason(summary, strengths.get(contactId));
 
             toUpsert.add(rs);
         }
@@ -195,5 +196,63 @@ public with sharing class RelationshipStrengthCalculator {
         }
 
         return records;
+    }
+
+    private String generateStrengthReason(
+        InteractionDataService.ContactInteractionSummary summary,
+        Decimal normalizedStrength
+    ) {
+        if (summary == null) return null;
+
+        List<String> parts = new List<String>();
+
+        // Engagement level label
+        String level;
+        if (normalizedStrength >= 0.7) {
+            level = 'Strong engagement';
+        } else if (normalizedStrength >= 0.4) {
+            level = 'Moderate engagement';
+        } else if (normalizedStrength > 0) {
+            level = 'Low engagement';
+        } else {
+            return 'No recorded interactions.';
+        }
+
+        // Email activity
+        Integer totalEmails = summary.emailsSent + summary.emailsReceived;
+        if (totalEmails > 0) {
+            parts.add(totalEmails + ' email' + (totalEmails != 1 ? 's' : '') + ' exchanged');
+        }
+
+        // Meeting activity
+        if (summary.meetingsAttended > 0) {
+            parts.add(summary.meetingsAttended + ' meeting'
+                + (summary.meetingsAttended != 1 ? 's' : '') + ' attended');
+        }
+
+        // Task activity
+        if (summary.tasksCompleted > 0) {
+            parts.add(summary.tasksCompleted + ' task'
+                + (summary.tasksCompleted != 1 ? 's' : '') + ' completed');
+        }
+
+        // Opportunity role
+        if (summary.hasOpportunityRole && String.isNotBlank(summary.opportunityRole)) {
+            parts.add(summary.opportunityRole + ' on opportunity');
+        } else if (summary.hasOpportunityRole) {
+            parts.add('has opportunity role');
+        }
+
+        // Co-occurrence
+        if (summary.coOccurrenceCount > 0) {
+            parts.add('appeared with ' + summary.coOccurrenceCount
+                + ' other contact' + (summary.coOccurrenceCount != 1 ? 's' : ''));
+        }
+
+        if (parts.isEmpty()) {
+            return level + '.';
+        }
+
+        return level + ': ' + String.join(parts, ', ') + '.';
     }
 }
