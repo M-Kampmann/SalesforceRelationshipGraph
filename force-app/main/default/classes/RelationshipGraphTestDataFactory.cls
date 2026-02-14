@@ -38,13 +38,17 @@ public class RelationshipGraphTestDataFactory {
     }
 
     public static List<Task> createTasks(Id contactId, Id accountId, Integer count) {
+        return createTasks(contactId, accountId, count, 'Completed');
+    }
+
+    public static List<Task> createTasks(Id contactId, Id accountId, Integer count, String status) {
         List<Task> tasks = new List<Task>();
         for (Integer i = 0; i < count; i++) {
             tasks.add(new Task(
                 Subject = 'Test Task ' + i,
                 WhoId = contactId,
-                AccountId = accountId, // Note: Task doesn't have AccountId in all orgs
-                Status = 'Completed'
+                AccountId = accountId,
+                Status = status
             ));
         }
         insert tasks;
@@ -73,6 +77,12 @@ public class RelationshipGraphTestDataFactory {
     public static List<Relationship_Strength__c> createStrengths(
         Id accountId, List<Contact> contacts
     ) {
+        return createStrengths(accountId, contacts, null);
+    }
+
+    public static List<Relationship_Strength__c> createStrengths(
+        Id accountId, List<Contact> contacts, Date lastInteractionDate
+    ) {
         List<Relationship_Strength__c> strengths = new List<Relationship_Strength__c>();
         for (Integer i = 0; i < contacts.size(); i++) {
             strengths.add(new Relationship_Strength__c(
@@ -80,14 +90,45 @@ public class RelationshipGraphTestDataFactory {
                 Target_Record_Id__c = String.valueOf(accountId),
                 Target_Object_Type__c = 'Account',
                 Account__c = accountId,
-                Strength__c = Math.mod(i * 17, 100) / 100.0, // Pseudo-random 0-1
+                Strength__c = Math.mod(i * 17, 100) / 100.0,
                 Interaction_Count__c = Math.mod(i * 7, 50),
                 Co_Occurrence_Count__c = Math.mod(i * 3, 20),
-                Last_Calculated__c = Datetime.now()
+                Last_Calculated__c = Datetime.now(),
+                Last_Interaction_Date__c = lastInteractionDate != null
+                    ? lastInteractionDate : Date.today()
             ));
         }
         insert strengths;
         return strengths;
+    }
+
+    public static List<Relationship_Strength__c> createCoOccurrenceStrengths(
+        Id accountId, Id sourceContactId, Id targetContactId, Integer count
+    ) {
+        List<Relationship_Strength__c> records = new List<Relationship_Strength__c>();
+        records.add(new Relationship_Strength__c(
+            Source_Contact__c = sourceContactId,
+            Target_Record_Id__c = String.valueOf(targetContactId),
+            Target_Object_Type__c = 'Contact',
+            Account__c = accountId,
+            Strength__c = Math.min(count / 20.0, 1.0),
+            Co_Occurrence_Count__c = count,
+            Last_Calculated__c = Datetime.now()
+        ));
+        insert records;
+        return records;
+    }
+
+    public static InteractionDataService.InteractionBundle createInteractionBundle(
+        List<Contact> contacts
+    ) {
+        InteractionDataService.InteractionBundle bundle =
+            new InteractionDataService.InteractionBundle();
+        for (Contact c : contacts) {
+            bundle.contactSummaries.put(c.Id,
+                new InteractionDataService.ContactInteractionSummary());
+        }
+        return bundle;
     }
 
     private static String getRandomTitle(Integer index) {

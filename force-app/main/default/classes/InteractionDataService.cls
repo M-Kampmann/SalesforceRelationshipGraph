@@ -79,7 +79,7 @@ public with sharing class InteractionDataService {
         Map<Id, List<Id>> emailToContacts = new Map<Id, List<Id>>();
 
         for (EmailMessageRelation emr : [
-            SELECT EmailMessageId, RelationId, RelationType
+            SELECT EmailMessageId, RelationId, RelationType, EmailMessage.MessageDate
             FROM EmailMessageRelation
             WHERE RelationId IN :contactIds
             AND EmailMessage.RelatedToId = :accountId
@@ -95,6 +95,7 @@ public with sharing class InteractionDataService {
             } else {
                 summary.emailsReceived++;
             }
+            summary.updateLastInteractionDate(emr.EmailMessage?.MessageDate?.date());
 
             // Track email-to-contacts for co-occurrence
             if (!emailToContacts.containsKey(emr.EmailMessageId)) {
@@ -147,7 +148,7 @@ public with sharing class InteractionDataService {
         Map<Id, List<Id>> eventToContacts = new Map<Id, List<Id>>();
 
         for (EventRelation er : [
-            SELECT EventId, RelationId, Status
+            SELECT EventId, RelationId, Status, Event.ActivityDate
             FROM EventRelation
             WHERE RelationId IN :contactIds
             AND Event.AccountId = :accountId
@@ -163,6 +164,7 @@ public with sharing class InteractionDataService {
             } else if (er.Status == 'Declined') {
                 summary.meetingsDeclined++;
             }
+            summary.updateLastInteractionDate(er.Event?.ActivityDate);
 
             // Track event-to-contacts for co-occurrence
             if (!eventToContacts.containsKey(er.EventId)) {
@@ -176,7 +178,7 @@ public with sharing class InteractionDataService {
 
     private void fetchTaskData(Id accountId, Set<Id> contactIds, InteractionBundle bundle) {
         for (Task t : [
-            SELECT WhoId, Status
+            SELECT WhoId, Status, ActivityDate
             FROM Task
             WHERE WhoId IN :contactIds
             AND AccountId = :accountId
@@ -186,7 +188,10 @@ public with sharing class InteractionDataService {
             ContactInteractionSummary summary = bundle.contactSummaries.get(t.WhoId);
             if (summary == null) continue;
 
-            summary.tasksCompleted++;
+            if (t.Status == 'Completed') {
+                summary.tasksCompleted++;
+            }
+            summary.updateLastInteractionDate(t.ActivityDate);
         }
     }
 
@@ -293,6 +298,7 @@ public with sharing class InteractionDataService {
         public String opportunityRole { get; set; }
         public Integer negativeSignalCount { get; set; }
         public Integer positiveSignalCount { get; set; }
+        public Date lastInteractionDate { get; set; }
 
         public ContactInteractionSummary() {
             this.emailsSent = 0;
@@ -304,6 +310,15 @@ public with sharing class InteractionDataService {
             this.hasOpportunityRole = false;
             this.negativeSignalCount = 0;
             this.positiveSignalCount = 0;
+        }
+
+        /**
+         * Track the most recent interaction date for time-decay scoring.
+         */
+        public void updateLastInteractionDate(Date d) {
+            if (d != null && (this.lastInteractionDate == null || d > this.lastInteractionDate)) {
+                this.lastInteractionDate = d;
+            }
         }
 
         /**

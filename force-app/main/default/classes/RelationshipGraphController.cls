@@ -6,6 +6,8 @@
 public with sharing class RelationshipGraphController {
 
     private static final String CACHE_PARTITION = 'local.RelationshipGraph';
+    private static Relationship_Graph_Config__mdt cachedConfig;
+    private static Boolean configLoaded = false;
 
     // ─── Graph Data ─────────────────────────────────────────────────
 
@@ -106,7 +108,7 @@ public with sharing class RelationshipGraphController {
         detail.objectType = objectType;
 
         if (objectType == 'Contact') {
-            Contact c = [
+            List<Contact> contacts = [
                 SELECT Id, Name, Title, Email, Phone, AccountId, Account.Name,
                        MailingCity, MailingState
                 FROM Contact
@@ -114,6 +116,10 @@ public with sharing class RelationshipGraphController {
                 WITH SECURITY_ENFORCED
                 LIMIT 1
             ];
+            if (contacts.isEmpty()) {
+                throw new AuraHandledException('Contact not found or not accessible');
+            }
+            Contact c = contacts[0];
             detail.name = c.Name;
             detail.title = c.Title;
             detail.email = c.Email;
@@ -140,26 +146,34 @@ public with sharing class RelationshipGraphController {
             detail.recentInteractions = getRecentInteractionCount(recordId);
 
         } else if (objectType == 'Account') {
-            Account a = [
+            List<Account> accounts = [
                 SELECT Id, Name, Industry, Type, Website, NumberOfEmployees
                 FROM Account
                 WHERE Id = :recordId
                 WITH SECURITY_ENFORCED
                 LIMIT 1
             ];
+            if (accounts.isEmpty()) {
+                throw new AuraHandledException('Account not found or not accessible');
+            }
+            Account a = accounts[0];
             detail.name = a.Name;
             detail.industry = a.Industry;
             detail.accountType = a.Type;
             detail.website = a.Website;
 
         } else if (objectType == 'Opportunity') {
-            Opportunity o = [
+            List<Opportunity> opps = [
                 SELECT Id, Name, StageName, Amount, CloseDate, Probability
                 FROM Opportunity
                 WHERE Id = :recordId
                 WITH SECURITY_ENFORCED
                 LIMIT 1
             ];
+            if (opps.isEmpty()) {
+                throw new AuraHandledException('Opportunity not found or not accessible');
+            }
+            Opportunity o = opps[0];
             detail.name = o.Name;
             detail.stage = o.StageName;
             detail.amount = o.Amount;
@@ -210,7 +224,10 @@ public with sharing class RelationshipGraphController {
         cc.Is_User_Override__c = true;
         cc.Last_Classified__c = Datetime.now();
 
-        upsert cc;
+        SObjectAccessDecision decision = Security.stripInaccessible(
+            AccessType.UPSERTABLE, new List<Contact_Classification__c>{ cc }
+        );
+        upsert decision.getRecords();
     }
 
     // ─── Configuration ──────────────────────────────────────────────
@@ -247,14 +264,18 @@ public with sharing class RelationshipGraphController {
     // ─── Private Helpers ────────────────────────────────────────────
 
     private static Relationship_Graph_Config__mdt getConfig() {
-        List<Relationship_Graph_Config__mdt> configs = [
-            SELECT Classification_Provider__c, Activity_Threshold_Days__c,
-                   Min_Interactions__c, Time_Decay_Factor__c, Cache_TTL_Minutes__c
-            FROM Relationship_Graph_Config__mdt
-            WHERE DeveloperName = 'Default'
-            LIMIT 1
-        ];
-        return configs.isEmpty() ? null : configs[0];
+        if (!configLoaded) {
+            List<Relationship_Graph_Config__mdt> configs = [
+                SELECT Classification_Provider__c, Activity_Threshold_Days__c,
+                       Min_Interactions__c, Time_Decay_Factor__c, Cache_TTL_Minutes__c
+                FROM Relationship_Graph_Config__mdt
+                WHERE DeveloperName = 'Default'
+                LIMIT 1
+            ];
+            cachedConfig = configs.isEmpty() ? null : configs[0];
+            configLoaded = true;
+        }
+        return cachedConfig;
     }
 
     private static Integer getRecentInteractionCount(Id contactId) {

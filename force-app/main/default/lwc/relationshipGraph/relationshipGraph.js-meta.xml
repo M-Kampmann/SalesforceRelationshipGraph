@@ -12,6 +12,20 @@
             <objects>
                 <object>Account</object>
             </objects>
+            <property name="showAllContacts" type="Boolean" default="false"
+                      label="Show All Contacts"
+                      description="When enabled, all contacts are shown regardless of interaction count. When disabled (default), passive contacts are hidden." />
+            <property name="defaultMinInteractions" type="Integer" default="3"
+                      label="Default Minimum Interactions"
+                      description="Minimum number of interactions required to display a contact (0 = show all)." />
+        </targetConfig>
+        <targetConfig targets="lightning__AppPage,lightning__HomePage">
+            <property name="showAllContacts" type="Boolean" default="false"
+                      label="Show All Contacts"
+                      description="When enabled, all contacts are shown regardless of interaction count. When disabled (default), passive contacts are hidden." />
+            <property name="defaultMinInteractions" type="Integer" default="3"
+                      label="Default Minimum Interactions"
+                      description="Minimum number of interactions required to display a contact (0 = show all)." />
         </targetConfig>
     </targetConfigs>
     <masterLabel>Relationship Graph</masterLabel>

@@ -1,0 +1,16 @@
+{
+  "name": "salesforce-relationship-graph",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Salesforce Relationship Graph LWC",
+  "scripts": {
+    "test": "lwc-jest",
+    "test:unit": "lwc-jest",
+    "test:unit:watch": "lwc-jest --watch",
+    "test:unit:debug": "lwc-jest --debug",
+    "test:unit:coverage": "lwc-jest --coverage"
+  },
+  "devDependencies": {
+    "@salesforce/sfdx-lwc-jest": "^5.1.0"
+  }
+}

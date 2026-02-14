@@ -25,11 +25,28 @@ public with sharing class RelationshipStrengthCalculator {
         Map<Id, Decimal> rawScores = new Map<Id, Decimal>();
         Decimal maxScore = 0.0;
 
+        // Use decay factor to reduce stale relationships (applied per-contact based on recency)
+        Decimal decay = (timeDecayFactor != null && timeDecayFactor > 0 && timeDecayFactor < 1)
+            ? timeDecayFactor : 1.0;
+
         for (Id contactId : bundle.contactSummaries.keySet()) {
             InteractionDataService.ContactInteractionSummary summary =
                 bundle.contactSummaries.get(contactId);
 
             Decimal score = calculateRawScore(summary);
+
+            // Apply time decay: score * decay^(weeks since last interaction)
+            if (decay < 1.0 && summary != null && summary.lastInteractionDate != null) {
+                Long daysSince = summary.lastInteractionDate.daysBetween(Date.today());
+                Decimal weeksSince = daysSince / 7.0;
+                // decay^weeks — Math.pow not available, use iterative multiplication
+                Decimal decayMultiplier = 1.0;
+                Integer fullWeeks = Integer.valueOf(weeksSince);
+                for (Integer w = 0; w < Math.min(fullWeeks, 52); w++) {
+                    decayMultiplier *= decay;
+                }
+                score *= decayMultiplier;
+            }
 
             rawScores.put(contactId, score);
             if (score > maxScore) {
@@ -109,7 +126,10 @@ public with sharing class RelationshipStrengthCalculator {
         toUpsert.addAll(coOccurrenceRecords);
 
         if (!toUpsert.isEmpty()) {
-            upsert toUpsert;
+            SObjectAccessDecision decision = Security.stripInaccessible(
+                AccessType.UPSERTABLE, toUpsert
+            );
+            upsert decision.getRecords();
         }
     }
 
@@ -131,18 +151,18 @@ public with sharing class RelationshipStrengthCalculator {
         List<Relationship_Strength__c> records = new List<Relationship_Strength__c>();
         Datetime now = Datetime.now();
 
-        // Query existing contact-to-contact records
-        Set<String> existingKeys = new Set<String>();
+        // Query existing contact-to-contact records (keyed for upsert)
+        Map<String, Relationship_Strength__c> existingMap = new Map<String, Relationship_Strength__c>();
         for (Relationship_Strength__c rs : [
-            SELECT Id, Source_Contact__c, Target_Record_Id__c
+            SELECT Id, Source_Contact__c, Target_Record_Id__c, Strength__c, Co_Occurrence_Count__c
             FROM Relationship_Strength__c
             WHERE Account__c = :accountId
             AND Target_Object_Type__c = 'Contact'
             WITH SECURITY_ENFORCED
             LIMIT 10000
         ]) {
-            existingKeys.add(
-                String.valueOf(rs.Source_Contact__c) + '_' + rs.Target_Record_Id__c
+            existingMap.put(
+                String.valueOf(rs.Source_Contact__c) + '_' + rs.Target_Record_Id__c, rs
             );
         }
 
@@ -153,20 +173,25 @@ public with sharing class RelationshipStrengthCalculator {
 
             String contactId1 = parts[0];
             String contactId2 = parts[1];
-
-            // Create bidirectional records if they don't exist
             String key1 = contactId1 + '_' + contactId2;
-            if (!existingKeys.contains(key1)) {
-                records.add(new Relationship_Strength__c(
+
+            Relationship_Strength__c rs;
+            if (existingMap.containsKey(key1)) {
+                // Update existing record
+                rs = existingMap.get(key1);
+            } else {
+                // Create new record
+                rs = new Relationship_Strength__c(
                     Source_Contact__c = Id.valueOf(contactId1),
                     Target_Record_Id__c = contactId2,
                     Target_Object_Type__c = 'Contact',
-                    Account__c = accountId,
-                    Strength__c = Math.min(count / 20.0, 1.0), // Normalize: 20+ co-occurrences = max
-                    Co_Occurrence_Count__c = count,
-                    Last_Calculated__c = now
-                ));
+                    Account__c = accountId
+                );
             }
+            rs.Strength__c = Math.min(count / 20.0, 1.0);
+            rs.Co_Occurrence_Count__c = count;
+            rs.Last_Calculated__c = now;
+            records.add(rs);
         }
 
         return records;

@@ -171,3 +171,8 @@ canvas {
     font-size: 12px;
     color: #706e6b;
 }
+
+.truncation-warning {
+    color: #b86e00;
+    font-weight: 600;
+}

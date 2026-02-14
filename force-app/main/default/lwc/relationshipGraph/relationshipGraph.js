@@ -1,4 +1,4 @@
-import { LightningElement, api, wire, track } from 'lwc';
+import { LightningElement, api } from 'lwc';
 import { NavigationMixin } from 'lightning/navigation';
 import { loadScript } from 'lightning/platformResourceLoader';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
@@ -33,15 +33,19 @@ const NODE_TYPE_COLORS = {
 
 export default class RelationshipGraph extends NavigationMixin(LightningElement) {
     @api recordId; // Account ID from record page
+    @api showAllContacts = false;
+    @api defaultMinInteractions = 3;
 
-    @track graphData = null;
-    @track selectedNode = null;
-    @track isLoading = true;
-    @track hidePassive = true;
-    @track minInteractions = 3;
-    @track activeFilters = new Set();
-    @track config = {};
-    @track hiddenCount = 0;
+    graphData = null;
+    selectedNode = null;
+    isLoading = true;
+    hidePassive = true;
+    minInteractions = 3;
+    activeFilters = [];
+    config = {};
+    hiddenCount = 0;
+    isTruncated = false;
+    totalContactCount = 0;
 
     d3Initialized = false;
     simulation = null;
@@ -59,6 +63,8 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
     // ─── Lifecycle ──────────────────────────────────────────────────
 
     connectedCallback() {
+        this.hidePassive = !this.showAllContacts;
+        this.minInteractions = this.defaultMinInteractions;
         this.loadConfig();
     }
 
@@ -122,6 +128,16 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
         }
 
         this.graphData = data;
+        this.isTruncated = data.isTruncated || false;
+        this.totalContactCount = data.totalContactCount || 0;
+
+        if (this.isTruncated) {
+            this.showToast(
+                'Large Account',
+                `Showing 500 of ${this.totalContactCount}+ contacts. Use filters to focus.`,
+                'warning'
+            );
+        }
 
         // Convert to D3-compatible format
         this.nodes = data.nodes.map(n => ({
@@ -180,7 +196,7 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
             this.height = container.clientHeight;
             this.canvas.width = this.width;
             this.canvas.height = this.height;
-            this.render();
+            this.renderCanvas();
         });
         this.resizeObserver.observe(container);
     }
@@ -220,12 +236,12 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
                 .radius(d => d.radius + 5)
             )
             .alphaDecay(0.02)
-            .on('tick', () => this.render());
+            .on('tick', () => this.renderCanvas());
     }
 
     // ─── Canvas Rendering ───────────────────────────────────────────
 
-    render() {
+    renderCanvas() {
         if (!this.ctx) return;
 
         const ctx = this.ctx;
@@ -397,7 +413,7 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
         }
 
         // Contact color based on classification
-        if (this.activeFilters.size > 0 && !this.activeFilters.has(node.classification)) {
+        if (this.activeFilters.length > 0 && !this.activeFilters.includes(node.classification)) {
             return '#e0e0e0'; // Dimmed for filtered-out classifications
         }
 
@@ -423,7 +439,7 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
         if (this.isPanning) {
             this.transform.x += event.movementX;
             this.transform.y += event.movementY;
-            this.render();
+            this.renderCanvas();
             return;
         }
 
@@ -432,7 +448,7 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
         if (node !== this.hoveredNode) {
             this.hoveredNode = node;
             this.canvas.style.cursor = node ? 'pointer' : 'default';
-            this.render();
+            this.renderCanvas();
         }
     }
 
@@ -506,7 +522,7 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
         this.transform.y = mouseY - (mouseY - this.transform.y) * (newK / this.transform.k);
         this.transform.k = newK;
 
-        this.render();
+        this.renderCanvas();
     }
 
     findNodeAt(x, y) {
@@ -558,16 +574,17 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
 
     handleFilterClick(event) {
         const classification = event.currentTarget.dataset.classification;
-        if (this.activeFilters.has(classification)) {
-            this.activeFilters.delete(classification);
+        const idx = this.activeFilters.indexOf(classification);
+        if (idx >= 0) {
+            this.activeFilters = this.activeFilters.filter(f => f !== classification);
         } else {
-            this.activeFilters.add(classification);
+            this.activeFilters = [...this.activeFilters, classification];
         }
         // Update node colors
         this.nodes.forEach(n => {
             n.color = this.getNodeColor(n);
         });
-        this.render();
+        this.renderCanvas();
     }
 
     async handleClassificationOverride(event) {
@@ -588,7 +605,7 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
                 node.classification = newClassification;
                 node.color = this.getNodeColor(node);
             }
-            this.render();
+            this.renderCanvas();
 
             this.showToast('Success', 'Classification updated', 'success');
         } catch (error) {
@@ -626,6 +643,10 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
         return this.hidePassive ? 'utility:preview' : 'utility:hide';
     }
 
+    get hidePassiveVariant() {
+        return this.hidePassive ? 'brand' : 'neutral';
+    }
+
     get nodeCount() {
         return this.nodes ? this.nodes.length : 0;
     }
@@ -653,7 +674,7 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
             value: cls,
             label: cls,
             cssClass: 'filter-badge' +
-                (this.activeFilters.has(cls) ? ' filter-active' : '') +
+                (this.activeFilters.includes(cls) ? ' filter-active' : '') +
                 ' classification-' + cls.toLowerCase().replace(/\s+/g, '-')
         }));
     }

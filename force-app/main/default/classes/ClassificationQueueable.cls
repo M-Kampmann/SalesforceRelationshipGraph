@@ -75,7 +75,10 @@ public with sharing class ClassificationQueueable implements Queueable, Database
         }
 
         if (!toUpsert.isEmpty()) {
-            upsert toUpsert;
+            SObjectAccessDecision decision = Security.stripInaccessible(
+                AccessType.UPSERTABLE, toUpsert
+            );
+            upsert decision.getRecords();
         }
     }
 }

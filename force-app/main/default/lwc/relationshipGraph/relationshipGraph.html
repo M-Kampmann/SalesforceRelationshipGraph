@@ -13,7 +13,7 @@
                     label={hidePassiveLabel}
                     icon-name={hidePassiveIcon}
                     onclick={toggleHidePassive}
-                    variant={hidePassive ? 'brand' : 'neutral'}>
+                    variant={hidePassiveVariant}>
                 </lightning-button>
             </lightning-button-group>
 
@@ -151,6 +151,9 @@
             <span>Edges: {edgeCount}</span>
             <template if:true={hidePassive}>
                 <span>Hidden: {hiddenCount} passive contacts</span>
+            </template>
+            <template if:true={isTruncated}>
+                <span class="truncation-warning">Showing 500 of {totalContactCount}+ contacts</span>
             </template>
         </div>
     </lightning-card>

@@ -36,13 +36,22 @@ public with sharing class GraphDataService {
         ));
 
         // 2. Get contacts and their classifications
+        // Query LIMIT+1 to detect truncation
         List<Contact> contacts = [
             SELECT Id, Name, Title, Email, AccountId
             FROM Contact
             WHERE AccountId = :accountId
             WITH SECURITY_ENFORCED
-            LIMIT 500
+            LIMIT 501
         ];
+
+        if (contacts.size() > 500) {
+            graph.isTruncated = true;
+            graph.totalContactCount = contacts.size(); // At least 501
+            contacts.remove(500); // Trim back to 500
+        } else {
+            graph.totalContactCount = contacts.size();
+        }
 
         Map<Id, Contact_Classification__c> classifications = getClassifications(
             accountId, new List<Contact>(contacts)
@@ -54,7 +63,7 @@ public with sharing class GraphDataService {
             contactIds.add(c.Id);
         }
 
-        Map<Id, Relationship_Strength__c> strengths = getStrengths(accountId, contactIds);
+        Map<Id, Relationship_Strength__c> strengths = getStrengths(accountId, contactIds, thresholdDays);
 
         // 4. Build contact nodes (with optional passive filtering)
         Set<Id> includedContactIds = new Set<Id>();
@@ -155,8 +164,12 @@ public with sharing class GraphDataService {
         return result;
     }
 
-    private Map<Id, Relationship_Strength__c> getStrengths(Id accountId, Set<Id> contactIds) {
+    private Map<Id, Relationship_Strength__c> getStrengths(
+        Id accountId, Set<Id> contactIds, Integer thresholdDays
+    ) {
         Map<Id, Relationship_Strength__c> result = new Map<Id, Relationship_Strength__c>();
+        Date cutoffDate = thresholdDays != null && thresholdDays > 0
+            ? Date.today().addDays(-thresholdDays) : null;
 
         for (Relationship_Strength__c rs : [
             SELECT Source_Contact__c, Strength__c, Interaction_Count__c,
@@ -167,6 +180,12 @@ public with sharing class GraphDataService {
             AND Target_Object_Type__c = 'Account'
             WITH SECURITY_ENFORCED
         ]) {
+            // Filter by threshold days if configured
+            if (cutoffDate != null
+                && rs.Last_Interaction_Date__c != null
+                && rs.Last_Interaction_Date__c < cutoffDate) {
+                continue;
+            }
             result.put(rs.Source_Contact__c, rs);
         }
 
@@ -229,10 +248,14 @@ public with sharing class GraphDataService {
     public class GraphData {
         @AuraEnabled public List<GraphNode> nodes { get; set; }
         @AuraEnabled public List<GraphEdge> edges { get; set; }
+        @AuraEnabled public Boolean isTruncated { get; set; }
+        @AuraEnabled public Integer totalContactCount { get; set; }
 
         public GraphData() {
             this.nodes = new List<GraphNode>();
             this.edges = new List<GraphEdge>();
+            this.isTruncated = false;
+            this.totalContactCount = 0;
         }
     }
 

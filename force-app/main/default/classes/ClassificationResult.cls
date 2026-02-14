@@ -1,7 +1,7 @@
 /**
  * Data class representing the result of a contact classification.
  */
-public class ClassificationResult {
+public with sharing class ClassificationResult {
 
     @AuraEnabled public String classification { get; set; }
     @AuraEnabled public Decimal confidenceScore { get; set; }
