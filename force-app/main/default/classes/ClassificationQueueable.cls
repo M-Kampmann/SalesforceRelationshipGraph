@@ -49,7 +49,8 @@ public with sharing class ClassificationQueueable implements Queueable, Database
             existing.put(String.valueOf(cc.Contact__c) + '_' + String.valueOf(cc.Account__c), cc);
         }
 
-        List<Contact_Classification__c> toUpsert = new List<Contact_Classification__c>();
+        List<Contact_Classification__c> toInsert = new List<Contact_Classification__c>();
+        List<Contact_Classification__c> toUpdate = new List<Contact_Classification__c>();
 
         for (Id contactId : results.keySet()) {
             ClassificationResult result = results.get(contactId);
@@ -71,14 +72,24 @@ public with sharing class ClassificationQueueable implements Queueable, Database
             cc.Is_User_Override__c = false;
             cc.Last_Classified__c = Datetime.now();
 
-            toUpsert.add(cc);
+            if (cc.Id != null) {
+                toUpdate.add(cc);
+            } else {
+                toInsert.add(cc);
+            }
         }
 
-        if (!toUpsert.isEmpty()) {
+        if (!toInsert.isEmpty()) {
             SObjectAccessDecision decision = Security.stripInaccessible(
-                AccessType.UPSERTABLE, toUpsert
+                AccessType.CREATABLE, toInsert
             );
-            upsert decision.getRecords();
+            insert decision.getRecords();
+        }
+        if (!toUpdate.isEmpty()) {
+            SObjectAccessDecision decision = Security.stripInaccessible(
+                AccessType.UPDATABLE, toUpdate
+            );
+            update decision.getRecords();
         }
     }
 }

@@ -144,33 +144,40 @@ public with sharing class InteractionDataService {
     }
 
     private void fetchEventData(Id accountId, Set<Id> contactIds, InteractionBundle bundle) {
-        // Events (meetings) linked via EventRelation
-        Map<Id, List<Id>> eventToContacts = new Map<Id, List<Id>>();
+        // Query Events directly by WhoId (reliable across all org configurations)
+        // Group by Subject+StartDateTime for co-occurrence detection
+        Map<String, List<Id>> meetingGroups = new Map<String, List<Id>>();
+        Map<String, Id> meetingGroupEventId = new Map<String, Id>();
 
-        for (EventRelation er : [
-            SELECT EventId, RelationId, Status, Event.ActivityDate
-            FROM EventRelation
-            WHERE RelationId IN :contactIds
-            AND Event.AccountId = :accountId
+        for (Event e : [
+            SELECT Id, WhoId, Subject, StartDateTime, ActivityDate
+            FROM Event
+            WHERE WhoId IN :contactIds
+            AND AccountId = :accountId
             WITH SECURITY_ENFORCED
             LIMIT 10000
         ]) {
-            Id contactId = er.RelationId;
-            ContactInteractionSummary summary = bundle.contactSummaries.get(contactId);
+            ContactInteractionSummary summary = bundle.contactSummaries.get(e.WhoId);
             if (summary == null) continue;
 
-            if (er.Status == 'Accepted' || er.Status == null) {
-                summary.meetingsAttended++;
-            } else if (er.Status == 'Declined') {
-                summary.meetingsDeclined++;
-            }
-            summary.updateLastInteractionDate(er.Event?.ActivityDate);
+            summary.meetingsAttended++;
+            summary.updateLastInteractionDate(e.ActivityDate);
 
-            // Track event-to-contacts for co-occurrence
-            if (!eventToContacts.containsKey(er.EventId)) {
-                eventToContacts.put(er.EventId, new List<Id>());
+            // Group events by Subject+StartDateTime for co-occurrence detection
+            String groupKey = (e.Subject != null ? e.Subject : '') + '|' +
+                             (e.StartDateTime != null ? String.valueOf(e.StartDateTime) : '');
+            if (!meetingGroups.containsKey(groupKey)) {
+                meetingGroups.put(groupKey, new List<Id>());
+                meetingGroupEventId.put(groupKey, e.Id);
             }
-            eventToContacts.get(er.EventId).add(contactId);
+            meetingGroups.get(groupKey).add(e.WhoId);
+        }
+
+        // Build co-occurrence map using a representative Event ID per group
+        Map<Id, List<Id>> eventToContacts = new Map<Id, List<Id>>();
+        for (String groupKey : meetingGroups.keySet()) {
+            Id eventId = meetingGroupEventId.get(groupKey);
+            eventToContacts.put(eventId, meetingGroups.get(groupKey));
         }
 
         bundle.eventCoOccurrences = eventToContacts;

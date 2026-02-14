@@ -21,7 +21,9 @@ public class RelationshipGraphTestDataFactory {
                 Title = getRandomTitle(i)
             ));
         }
-        insert contacts;
+        Database.DMLOptions dml = new Database.DMLOptions();
+        dml.DuplicateRuleHeader.allowSave = true;
+        Database.insert(contacts, dml);
         return contacts;
     }
 
@@ -47,7 +49,6 @@ public class RelationshipGraphTestDataFactory {
             tasks.add(new Task(
                 Subject = 'Test Task ' + i,
                 WhoId = contactId,
-                AccountId = accountId,
                 Status = status
             ));
         }

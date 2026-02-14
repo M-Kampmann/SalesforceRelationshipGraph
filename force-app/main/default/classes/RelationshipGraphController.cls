@@ -23,7 +23,9 @@ public with sharing class RelationshipGraphController {
         Integer thresholdDays
     ) {
         if (accountId == null) {
-            throw new AuraHandledException('Account ID is required');
+            AuraHandledException ex = new AuraHandledException('Account ID is required');
+            ex.setMessage('Account ID is required');
+            throw ex;
         }
 
         // Try cache first
@@ -57,7 +59,9 @@ public with sharing class RelationshipGraphController {
         Integer thresholdDays
     ) {
         if (accountId == null) {
-            throw new AuraHandledException('Account ID is required');
+            AuraHandledException ex = new AuraHandledException('Account ID is required');
+            ex.setMessage('Account ID is required');
+            throw ex;
         }
 
         // Recompute interaction data and strengths
@@ -99,7 +103,9 @@ public with sharing class RelationshipGraphController {
     @AuraEnabled(cacheable=true)
     public static NodeDetail getNodeDetail(Id recordId) {
         if (recordId == null) {
-            throw new AuraHandledException('Record ID is required');
+            AuraHandledException ex = new AuraHandledException('Record ID is required');
+            ex.setMessage('Record ID is required');
+            throw ex;
         }
 
         String objectType = recordId.getSObjectType().getDescribe().getName();
@@ -117,7 +123,9 @@ public with sharing class RelationshipGraphController {
                 LIMIT 1
             ];
             if (contacts.isEmpty()) {
-                throw new AuraHandledException('Contact not found or not accessible');
+                AuraHandledException ex2 = new AuraHandledException('Contact not found or not accessible');
+                ex2.setMessage('Contact not found or not accessible');
+                throw ex2;
             }
             Contact c = contacts[0];
             detail.name = c.Name;
@@ -154,7 +162,9 @@ public with sharing class RelationshipGraphController {
                 LIMIT 1
             ];
             if (accounts.isEmpty()) {
-                throw new AuraHandledException('Account not found or not accessible');
+                AuraHandledException ex3 = new AuraHandledException('Account not found or not accessible');
+                ex3.setMessage('Account not found or not accessible');
+                throw ex3;
             }
             Account a = accounts[0];
             detail.name = a.Name;
@@ -171,7 +181,9 @@ public with sharing class RelationshipGraphController {
                 LIMIT 1
             ];
             if (opps.isEmpty()) {
-                throw new AuraHandledException('Opportunity not found or not accessible');
+                AuraHandledException ex4 = new AuraHandledException('Opportunity not found or not accessible');
+                ex4.setMessage('Opportunity not found or not accessible');
+                throw ex4;
             }
             Opportunity o = opps[0];
             detail.name = o.Name;
@@ -194,7 +206,10 @@ public with sharing class RelationshipGraphController {
         Id contactId, Id accountId, String classification
     ) {
         if (!ClassificationResult.VALID_CLASSIFICATIONS.contains(classification)) {
-            throw new AuraHandledException('Invalid classification: ' + classification);
+            String msg = 'Invalid classification: ' + classification;
+            AuraHandledException ex = new AuraHandledException(msg);
+            ex.setMessage(msg);
+            throw ex;
         }
 
         // Check for existing user override

@@ -329,7 +329,7 @@ private class InteractionDataServiceTest {
         Test.stopTest();
 
         // Should use bulk queries, not per-contact. Expect ~5-7 queries
-        // (EmailMessageRelation, EmailMessage, EventRelation, Task, OpportunityContactRole)
+        // (EmailMessageRelation, EmailMessage, Event, Task, OpportunityContactRole)
         System.assert(queriesUsed < 10,
             'Should use bulk queries. Used: ' + queriesUsed);
         System.assertEquals(5, bundle.contactSummaries.size());

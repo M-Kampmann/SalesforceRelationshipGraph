@@ -151,7 +151,7 @@ public with sharing class HeuristicClassificationProvider implements IClassifica
         }
 
         // Very low engagement with negative signals suggests Detractor or Blocker
-        if (engagementScore < 2 && summary.meetingsDeclined > 2) {
+        if (engagementScore < 3 && summary.meetingsDeclined > 2) {
             scores.put('Blocker', scores.get('Blocker') + 2.0);
             scores.put('Detractor', scores.get('Detractor') + 1.5);
         }
