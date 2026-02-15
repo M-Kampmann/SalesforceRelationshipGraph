@@ -86,10 +86,15 @@ public with sharing class GraphDataService {
                 c.Id, c.Name, 'Contact', classification, c.Title,
                 interactionCount, coOccurrenceCount
             ));
-            graph.nodes[graph.nodes.size() - 1].confidence = confidence;
-            graph.nodes[graph.nodes.size() - 1].email = c.Email;
-            if (rs != null && rs.Strength_Reason__c != null) {
-                graph.nodes[graph.nodes.size() - 1].strengthReason = rs.Strength_Reason__c;
+            GraphNode node = graph.nodes[graph.nodes.size() - 1];
+            node.confidence = confidence;
+            node.email = c.Email;
+            if (rs != null) {
+                if (rs.Strength_Reason__c != null) {
+                    node.strengthReason = rs.Strength_Reason__c;
+                }
+                node.lastInteractionDate = rs.Last_Interaction_Date__c;
+                node.strength = rs.Strength__c;
             }
 
             includedContactIds.add(c.Id);
@@ -137,6 +142,9 @@ public with sharing class GraphDataService {
 
         // 7. Add opportunities as nodes
         addOpportunityNodes(accountId, includedContactIds, graph);
+
+        // 8. Detect relationship risks
+        detectRisks(graph);
 
         return graph;
     }
@@ -253,12 +261,14 @@ public with sharing class GraphDataService {
         @AuraEnabled public List<GraphEdge> edges { get; set; }
         @AuraEnabled public Boolean isTruncated { get; set; }
         @AuraEnabled public Integer totalContactCount { get; set; }
+        @AuraEnabled public List<RiskAlert> riskAlerts { get; set; }
 
         public GraphData() {
             this.nodes = new List<GraphNode>();
             this.edges = new List<GraphEdge>();
             this.isTruncated = false;
             this.totalContactCount = 0;
+            this.riskAlerts = new List<RiskAlert>();
         }
     }
 
@@ -275,6 +285,8 @@ public with sharing class GraphDataService {
         @AuraEnabled public Decimal amount { get; set; }         // For Opportunity nodes
         @AuraEnabled public Date closeDate { get; set; }         // For Opportunity nodes
         @AuraEnabled public String strengthReason { get; set; }  // AI-generated explanation
+        @AuraEnabled public Datetime lastInteractionDate { get; set; }
+        @AuraEnabled public Decimal strength { get; set; }
 
         public GraphNode(
             Id recordId, String name, String nodeType, String classification,
@@ -307,6 +319,134 @@ public with sharing class GraphDataService {
             this.strength = strength;
             this.interactionCount = interactionCount;
             this.edgeType = edgeType;
+        }
+    }
+
+    public class RiskAlert {
+        @AuraEnabled public String severity { get; set; }   // high, medium
+        @AuraEnabled public String riskType { get; set; }    // stale_champion, no_economic_buyer, etc.
+        @AuraEnabled public String message { get; set; }
+        @AuraEnabled public String contactId { get; set; }   // nullable — some alerts are account-level
+        @AuraEnabled public String contactName { get; set; }
+
+        public RiskAlert(String severity, String riskType, String message) {
+            this.severity = severity;
+            this.riskType = riskType;
+            this.message = message;
+        }
+    }
+
+    // ─── Risk Detection ──────────────────────────────────────────────
+
+    @TestVisible
+    private void detectRisks(GraphData graph) {
+        List<GraphNode> contactNodes = new List<GraphNode>();
+        for (GraphNode node : graph.nodes) {
+            if (node.nodeType == 'Contact') {
+                contactNodes.add(node);
+            }
+        }
+
+        // Count classifications for single-threaded and missing-role checks
+        Map<String, List<GraphNode>> byClassification = new Map<String, List<GraphNode>>();
+        for (GraphNode node : contactNodes) {
+            String cls = node.classification != null ? node.classification : 'Unknown';
+            if (!byClassification.containsKey(cls)) {
+                byClassification.put(cls, new List<GraphNode>());
+            }
+            byClassification.get(cls).add(node);
+        }
+
+        // R1: Stale Champion — no activity in 30+ days
+        Datetime staleThreshold = Datetime.now().addDays(-30);
+        if (byClassification.containsKey('Champion')) {
+            for (GraphNode node : byClassification.get('Champion')) {
+                if (node.lastInteractionDate != null && node.lastInteractionDate < staleThreshold) {
+                    Long millisDiff = Datetime.now().getTime() - node.lastInteractionDate.getTime();
+                    Integer daysSince = (Integer)(millisDiff / (1000 * 60 * 60 * 24));
+                    RiskAlert alert = new RiskAlert(
+                        'high', 'stale_champion',
+                        node.name + ' \u2014 no activity in ' + daysSince + ' days'
+                    );
+                    alert.contactId = node.id;
+                    alert.contactName = node.name;
+                    graph.riskAlerts.add(alert);
+                }
+            }
+        }
+
+        // R2: No Economic Buyer
+        if (!byClassification.containsKey('Economic Buyer')
+            || byClassification.get('Economic Buyer').isEmpty()) {
+            graph.riskAlerts.add(new RiskAlert(
+                'high', 'no_economic_buyer',
+                'No Economic Buyer identified'
+            ));
+        }
+
+        // R3: Active Blocker/Detractor — high interaction count
+        for (String cls : new List<String>{ 'Blocker', 'Detractor' }) {
+            if (byClassification.containsKey(cls)) {
+                for (GraphNode node : byClassification.get(cls)) {
+                    if (node.interactionCount > 5) {
+                        RiskAlert alert = new RiskAlert(
+                            'high', 'active_blocker',
+                            node.name + ' (' + cls + ') is actively engaged'
+                        );
+                        alert.contactId = node.id;
+                        alert.contactName = node.name;
+                        graph.riskAlerts.add(alert);
+                    }
+                }
+            }
+        }
+
+        // R4: Weak Key Buyer — Economic/Technical Buyer with low strength
+        for (String cls : new List<String>{ 'Economic Buyer', 'Technical Buyer' }) {
+            if (byClassification.containsKey(cls)) {
+                for (GraphNode node : byClassification.get(cls)) {
+                    if (node.strength != null && node.strength < 0.3) {
+                        RiskAlert alert = new RiskAlert(
+                            'medium', 'weak_key_buyer',
+                            node.name + ' has a weak relationship'
+                        );
+                        alert.contactId = node.id;
+                        alert.contactName = node.name;
+                        graph.riskAlerts.add(alert);
+                    }
+                }
+            }
+        }
+
+        // R5: Single-Threaded — only 1 Champion or only 1 Economic Buyer
+        for (String cls : new List<String>{ 'Champion', 'Economic Buyer' }) {
+            if (byClassification.containsKey(cls)
+                && byClassification.get(cls).size() == 1) {
+                GraphNode node = byClassification.get(cls)[0];
+                RiskAlert alert = new RiskAlert(
+                    'medium', 'single_threaded',
+                    'Only one ' + cls + ' \u2014 deal at risk if they leave'
+                );
+                alert.contactId = node.id;
+                alert.contactName = node.name;
+                graph.riskAlerts.add(alert);
+            }
+        }
+
+        // R6: Ghost Champion — low confidence
+        if (byClassification.containsKey('Champion')) {
+            for (GraphNode node : byClassification.get('Champion')) {
+                if (node.confidence != null && node.confidence < 0.5) {
+                    RiskAlert alert = new RiskAlert(
+                        'medium', 'ghost_champion',
+                        node.name + ' may not be a true Champion (' +
+                        Math.round(node.confidence * 100) + '%)'
+                    );
+                    alert.contactId = node.id;
+                    alert.contactName = node.name;
+                    graph.riskAlerts.add(alert);
+                }
+            }
         }
     }
 }

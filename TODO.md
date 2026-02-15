@@ -12,6 +12,12 @@
 ## Backlog
 
 - [ ] **Additional LLM providers** — Add Claude API, OpenAI, etc. as classification providers. The `IClassificationProvider` interface and `ClassificationProviderFactory` registry are ready for extension.
+- [ ] **Configurable risk thresholds** — Stale champion threshold (currently 30 days), active blocker threshold (currently 5 interactions), weak buyer threshold (currently 0.3 strength) are hardcoded in `GraphDataService.detectRisks()`. Consider adding to `Relationship_Graph_Config__mdt`.
+- [ ] **Risk alert history/trending** — Track how risk alerts change over time. Currently computed fresh on each graph load with no persistence.
+- [ ] **Multi-account view** — Cross-account relationship map showing contacts bridging multiple deals.
+- [ ] **Timeline/history mode** — Animate relationship evolution over time using `Last_Interaction_Date__c` and `Last_Classified__c`.
+- [ ] **Contact-to-Contact strength edges** — Co-occurrence data exists in `Relationship_Strength__c` (Target_Object_Type = Contact) but graph only partially renders these. Full internal alliance/silo visualization.
+- [ ] **Influence path finder** — "How do I reach the Economic Buyer?" — shortest path through Champions and Influencers.
 
 ---
 
@@ -141,3 +147,104 @@ System.debug(URL.getOrgDomainUrl().toExternalForm());
    ```
 
 **Expected:** Count matches or is close to the number of contacts. All contacts classified without governor limit errors.
+
+---
+
+## Production UAT — Relationship Risk Alerts
+
+Run these after deploying the risk alerts feature. No special prerequisites beyond the base setup.
+
+### Test 8: Risk Alerts Appear on Graph Load
+
+**Steps:**
+1. Navigate to an Account with contacts that have classifications and interaction data
+2. Open the Relationship Graph component
+3. Look at the stats bar (footer)
+
+**Expected:**
+- A risk alert button appears (e.g. "3 Risks") if any risks are detected
+- Button is red (`destructive` variant) if any high-severity alerts exist
+- Button is neutral if only medium-severity alerts
+
+### Test 9: Risk Panel Opens and Shows Alerts
+
+**Steps:**
+1. Click the risk alert button in the stats bar
+2. Review the risk panel that appears on the left side
+
+**Expected:**
+- Panel shows all detected risks with severity indicators
+- High-severity alerts have a red left border
+- Medium-severity alerts have an orange left border
+- Each alert shows a risk type label and descriptive message
+- Alerts with contact names show the contact's name
+
+### Test 10: Click Risk Alert to Navigate to Contact
+
+**Steps:**
+1. Open the risk panel
+2. Click on an alert that references a specific contact (e.g. "Stale Champion" or "Active Blocker")
+
+**Expected:**
+- The canvas centers on the referenced contact node
+- The detail panel opens showing that contact's information
+- The contact node has a dashed red or orange ring around it
+
+### Test 11: Risk Ring Indicators on Canvas Nodes
+
+**Steps:**
+1. Load the graph for an account with known risks
+2. Look at contact nodes on the canvas
+
+**Expected:**
+- Contacts with high-severity risks have a dashed red ring around them
+- Contacts with medium-severity risks have a dashed orange ring
+- Contacts with no risks have no extra ring (just the normal white border)
+- The ring is visible at different zoom levels
+
+### Test 12: Verify Each Risk Type Fires Correctly
+
+**Steps:**
+1. Query your account data and verify the following scenarios. Use Developer Console Execute Anonymous to check:
+   ```apex
+   GraphDataService svc = new GraphDataService();
+   GraphDataService.GraphData graph = svc.buildGraphData('<account-id>', false, 0, 90);
+   for (GraphDataService.RiskAlert alert : graph.riskAlerts) {
+       System.debug(alert.severity + ' | ' + alert.riskType + ' | ' + alert.message);
+   }
+   ```
+
+**Expected risk types and when they fire:**
+
+| Risk Type | Fires When |
+|---|---|
+| `stale_champion` | Champion with `Last_Interaction_Date__c` > 30 days ago |
+| `no_economic_buyer` | No contact classified as "Economic Buyer" |
+| `active_blocker` | Blocker or Detractor with > 5 interactions |
+| `weak_key_buyer` | Economic/Technical Buyer with strength < 0.3 |
+| `single_threaded` | Only 1 Champion, or only 1 Economic Buyer |
+| `ghost_champion` | Champion with confidence < 50% |
+
+### Test 13: No False Positives on Healthy Account
+
+**Steps:**
+1. Find or create an account with:
+   - 3+ Champions (recent activity, high confidence)
+   - 1+ Economic Buyer (strong relationship)
+   - No Blockers or Detractors
+2. Load the graph
+
+**Expected:**
+- No risk alert button in stats bar (or only low-count medium alerts like single-threaded EB)
+- No red rings on any nodes
+
+### Test 14: Risk Alerts Refresh After Data Change
+
+**Steps:**
+1. Load graph, note the risk alerts
+2. Override a contact's classification (e.g. change "Unknown" to "Economic Buyer")
+3. Click Refresh
+
+**Expected:**
+- Risk alert count may change (e.g. "No Economic Buyer" alert disappears)
+- Risk panel updates to reflect new state

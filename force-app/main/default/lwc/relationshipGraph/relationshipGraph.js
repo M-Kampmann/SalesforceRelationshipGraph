@@ -46,6 +46,9 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
     hiddenCount = 0;
     isTruncated = false;
     totalContactCount = 0;
+    riskAlerts = [];
+    showRiskPanel = false;
+    riskNodeIds = new Map(); // nodeId → highest severity
 
     d3Initialized = false;
     simulation = null;
@@ -130,6 +133,26 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
         this.graphData = data;
         this.isTruncated = data.isTruncated || false;
         this.totalContactCount = data.totalContactCount || 0;
+
+        // Extract risk alerts
+        this.riskAlerts = (data.riskAlerts || []).map((alert, idx) => ({
+            ...alert,
+            key: 'risk-' + idx,
+            severityClass: 'risk-alert-item risk-severity-' + alert.severity,
+            severityIcon: alert.severity === 'high' ? '\u26A0' : '\u26AB',
+            isClickable: !!alert.contactId
+        }));
+
+        // Build risk node lookup
+        this.riskNodeIds = new Map();
+        for (const alert of this.riskAlerts) {
+            if (alert.contactId) {
+                const existing = this.riskNodeIds.get(alert.contactId);
+                if (!existing || alert.severity === 'high') {
+                    this.riskNodeIds.set(alert.contactId, alert.severity);
+                }
+            }
+        }
 
         if (this.isTruncated) {
             this.showToast(
@@ -336,6 +359,18 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
         ctx.strokeStyle = '#fff';
         ctx.lineWidth = 2;
         ctx.stroke();
+
+        // Risk ring indicator
+        if (node.nodeType === 'Contact' && this.riskNodeIds.has(node.id)) {
+            const severity = this.riskNodeIds.get(node.id);
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, radius + 5, 0, 2 * Math.PI);
+            ctx.strokeStyle = severity === 'high' ? '#c62828' : '#ef6c00';
+            ctx.lineWidth = 2.5;
+            ctx.setLineDash([4, 3]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
 
         // Node label
         ctx.font = node.nodeType === 'Account' ? 'bold 12px sans-serif' : '10px sans-serif';
@@ -622,6 +657,30 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
         this.selectedNode = null;
     }
 
+    handleRiskAlertToggle() {
+        this.showRiskPanel = !this.showRiskPanel;
+    }
+
+    closeRiskPanel() {
+        this.showRiskPanel = false;
+    }
+
+    handleRiskAlertClick(event) {
+        const contactId = event.currentTarget.dataset.contactId;
+        if (!contactId) return;
+
+        // Find and select the node
+        const node = this.nodes.find(n => n.id === contactId);
+        if (node) {
+            this.selectedNode = { ...node };
+
+            // Center canvas on the node
+            this.transform.x = this.width / 2 - node.x * this.transform.k;
+            this.transform.y = this.height / 2 - node.y * this.transform.k;
+            this.renderCanvas();
+        }
+    }
+
     handleZoomIn() {
         this._applyZoom(1.2);
     }
@@ -711,6 +770,22 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
     get selectedNodeClassificationClass() {
         const cls = this.selectedNode?.classification || 'Unknown';
         return 'classification-badge classification-' + cls.toLowerCase().replace(/\s+/g, '-');
+    }
+
+    get riskAlertCount() {
+        return this.riskAlerts.length;
+    }
+
+    get hasRiskAlerts() {
+        return this.riskAlerts.length > 0;
+    }
+
+    get riskAlertButtonVariant() {
+        return this.riskAlerts.some(a => a.severity === 'high') ? 'destructive' : 'neutral';
+    }
+
+    get riskAlertButtonLabel() {
+        return this.riskAlerts.length + ' Risk' + (this.riskAlerts.length !== 1 ? 's' : '');
     }
 
     get classificationFilters() {

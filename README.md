@@ -112,7 +112,7 @@ sf org open --target-org relgraph
 
 ### Apex Tests
 
-100 Apex tests run automatically during deployment with `--test-level RunLocalTests`:
+106 Apex tests run automatically during deployment with `--test-level RunLocalTests`:
 
 ```bash
 sf project deploy start --source-dir force-app --target-org relgraph --test-level RunLocalTests
@@ -120,7 +120,7 @@ sf project deploy start --source-dir force-app --target-org relgraph --test-leve
 
 Test classes cover all services, providers, and the controller:
 - `RelationshipGraphControllerTest` — Controller methods, cache, config, node details
-- `GraphDataServiceTest` — Graph data building, filtering, edge generation
+- `GraphDataServiceTest` — Graph data building, filtering, edge generation, risk alerts
 - `InteractionDataServiceTest` — Bulk data fetching, co-occurrence, sentiment
 - `RelationshipStrengthCalculatorTest` — Strength scoring, time decay, persistence
 - `HeuristicClassificationProviderTest` — Rule-based classification logic
@@ -131,7 +131,7 @@ Test classes cover all services, providers, and the controller:
 
 ### LWC Jest Tests
 
-33 Jest tests for the LWC component:
+37 Jest tests for the LWC component:
 
 ```bash
 npm install

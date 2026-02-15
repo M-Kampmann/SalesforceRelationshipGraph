@@ -336,4 +336,228 @@ private class GraphDataServiceTest {
         System.assertEquals(10, edge.interactionCount);
         System.assertEquals('account_relationship', edge.edgeType);
     }
+
+    // ─── Risk Alert Tests ────────────────────────────────────────────
+
+    @IsTest
+    static void testRiskAlertStaleChampion() {
+        Account acct = [SELECT Id FROM Account LIMIT 1];
+
+        // Set all strength records to 60 days ago
+        List<Relationship_Strength__c> strengths = [
+            SELECT Id FROM Relationship_Strength__c WHERE Account__c = :acct.Id
+        ];
+        for (Relationship_Strength__c rs : strengths) {
+            rs.Last_Interaction_Date__c = Datetime.now().addDays(-60);
+        }
+        update strengths;
+
+        GraphDataService service = new GraphDataService();
+
+        Test.startTest();
+        GraphDataService.GraphData graph = service.buildGraphData(
+            acct.Id, false, 0, 90
+        );
+        Test.stopTest();
+
+        Boolean hasStaleChampion = false;
+        for (GraphDataService.RiskAlert alert : graph.riskAlerts) {
+            if (alert.riskType == 'stale_champion') {
+                hasStaleChampion = true;
+                System.assertEquals('high', alert.severity);
+                System.assertNotEquals(null, alert.contactId);
+                break;
+            }
+        }
+        System.assert(hasStaleChampion, 'Should detect stale champion');
+    }
+
+    @IsTest
+    static void testRiskAlertNoEconomicBuyer() {
+        Account acct = [SELECT Id FROM Account LIMIT 1];
+        // Setup has all contacts as "Champion", no Economic Buyer
+
+        GraphDataService service = new GraphDataService();
+
+        Test.startTest();
+        GraphDataService.GraphData graph = service.buildGraphData(
+            acct.Id, false, 0, 90
+        );
+        Test.stopTest();
+
+        Boolean hasNoEB = false;
+        for (GraphDataService.RiskAlert alert : graph.riskAlerts) {
+            if (alert.riskType == 'no_economic_buyer') {
+                hasNoEB = true;
+                System.assertEquals('high', alert.severity);
+                System.assertEquals(null, alert.contactId);
+                break;
+            }
+        }
+        System.assert(hasNoEB, 'Should detect missing Economic Buyer');
+    }
+
+    @IsTest
+    static void testRiskAlertActiveBlocker() {
+        Account acct = [SELECT Id FROM Account LIMIT 1];
+        List<Contact> contacts = [SELECT Id FROM Contact WHERE AccountId = :acct.Id LIMIT 1];
+
+        // Reclassify one contact as Blocker
+        Contact_Classification__c cc = [
+            SELECT Id FROM Contact_Classification__c
+            WHERE Contact__c = :contacts[0].Id AND Account__c = :acct.Id LIMIT 1
+        ];
+        cc.Classification__c = 'Blocker';
+        update cc;
+
+        // Give them high interactions
+        Relationship_Strength__c rs = [
+            SELECT Id FROM Relationship_Strength__c
+            WHERE Source_Contact__c = :contacts[0].Id
+            AND Account__c = :acct.Id
+            AND Target_Object_Type__c = 'Account' LIMIT 1
+        ];
+        rs.Interaction_Count__c = 20;
+        update rs;
+
+        GraphDataService service = new GraphDataService();
+
+        Test.startTest();
+        GraphDataService.GraphData graph = service.buildGraphData(
+            acct.Id, false, 0, 90
+        );
+        Test.stopTest();
+
+        Boolean hasActiveBlocker = false;
+        for (GraphDataService.RiskAlert alert : graph.riskAlerts) {
+            if (alert.riskType == 'active_blocker') {
+                hasActiveBlocker = true;
+                System.assertEquals('high', alert.severity);
+                break;
+            }
+        }
+        System.assert(hasActiveBlocker, 'Should detect active blocker');
+    }
+
+    @IsTest
+    static void testRiskAlertWeakKeyBuyer() {
+        Account acct = [SELECT Id FROM Account LIMIT 1];
+        List<Contact> contacts = [SELECT Id FROM Contact WHERE AccountId = :acct.Id LIMIT 1];
+
+        // Reclassify as Economic Buyer
+        Contact_Classification__c cc = [
+            SELECT Id FROM Contact_Classification__c
+            WHERE Contact__c = :contacts[0].Id AND Account__c = :acct.Id LIMIT 1
+        ];
+        cc.Classification__c = 'Economic Buyer';
+        update cc;
+
+        // Set low strength
+        Relationship_Strength__c rs = [
+            SELECT Id FROM Relationship_Strength__c
+            WHERE Source_Contact__c = :contacts[0].Id
+            AND Account__c = :acct.Id
+            AND Target_Object_Type__c = 'Account' LIMIT 1
+        ];
+        rs.Strength__c = 0.1;
+        update rs;
+
+        GraphDataService service = new GraphDataService();
+
+        Test.startTest();
+        GraphDataService.GraphData graph = service.buildGraphData(
+            acct.Id, false, 0, 90
+        );
+        Test.stopTest();
+
+        Boolean hasWeakBuyer = false;
+        for (GraphDataService.RiskAlert alert : graph.riskAlerts) {
+            if (alert.riskType == 'weak_key_buyer') {
+                hasWeakBuyer = true;
+                System.assertEquals('medium', alert.severity);
+                break;
+            }
+        }
+        System.assert(hasWeakBuyer, 'Should detect weak key buyer');
+    }
+
+    @IsTest
+    static void testRiskAlertSingleThreaded() {
+        Account acct = [SELECT Id FROM Account LIMIT 1];
+        // Setup: 10 contacts all classified as Champion
+        // Single-threaded only fires when there's exactly 1 → need to reduce
+
+        // Reclassify 9 of 10 to "End User"
+        List<Contact_Classification__c> ccs = [
+            SELECT Id FROM Contact_Classification__c
+            WHERE Account__c = :acct.Id
+            ORDER BY CreatedDate
+        ];
+        for (Integer i = 1; i < ccs.size(); i++) {
+            ccs[i].Classification__c = 'End User';
+        }
+        update ccs;
+
+        GraphDataService service = new GraphDataService();
+
+        Test.startTest();
+        GraphDataService.GraphData graph = service.buildGraphData(
+            acct.Id, false, 0, 90
+        );
+        Test.stopTest();
+
+        Boolean hasSingleThreaded = false;
+        for (GraphDataService.RiskAlert alert : graph.riskAlerts) {
+            if (alert.riskType == 'single_threaded' && alert.message.contains('Champion')) {
+                hasSingleThreaded = true;
+                System.assertEquals('medium', alert.severity);
+                break;
+            }
+        }
+        System.assert(hasSingleThreaded, 'Should detect single-threaded Champion');
+    }
+
+    @IsTest
+    static void testNoRiskAlertsHealthyAccount() {
+        Account acct = [SELECT Id FROM Account LIMIT 1];
+
+        // Create a healthy state: multiple Champions + 1 Economic Buyer + recent interactions
+        List<Contact_Classification__c> ccs = [
+            SELECT Id FROM Contact_Classification__c
+            WHERE Account__c = :acct.Id
+            ORDER BY CreatedDate
+        ];
+        // First 5 stay Champion, 6th becomes Economic Buyer
+        if (ccs.size() > 5) {
+            ccs[5].Classification__c = 'Economic Buyer';
+            update ccs;
+        }
+
+        // Ensure recent interactions
+        List<Relationship_Strength__c> strengths = [
+            SELECT Id FROM Relationship_Strength__c WHERE Account__c = :acct.Id
+        ];
+        for (Relationship_Strength__c rs : strengths) {
+            rs.Last_Interaction_Date__c = Date.today();
+            rs.Strength__c = 0.7;
+        }
+        update strengths;
+
+        GraphDataService service = new GraphDataService();
+
+        Test.startTest();
+        GraphDataService.GraphData graph = service.buildGraphData(
+            acct.Id, false, 0, 90
+        );
+        Test.stopTest();
+
+        // Should have no high-severity alerts (may have single_threaded for EB)
+        Integer highAlerts = 0;
+        for (GraphDataService.RiskAlert alert : graph.riskAlerts) {
+            if (alert.severity == 'high') {
+                highAlerts++;
+            }
+        }
+        System.assertEquals(0, highAlerts, 'Healthy account should have no high-severity alerts');
+    }
 }

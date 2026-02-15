@@ -80,6 +80,36 @@
                 </lightning-button-icon>
             </div>
 
+            <!-- Risk Alert Panel -->
+            <template if:true={showRiskPanel}>
+                <div class="risk-panel">
+                    <div class="risk-panel-header">
+                        <span class="risk-panel-title">Risk Alerts ({riskAlertCount})</span>
+                        <lightning-button-icon
+                            icon-name="utility:close"
+                            alternative-text="Close"
+                            onclick={closeRiskPanel}
+                            size="small">
+                        </lightning-button-icon>
+                    </div>
+                    <div class="risk-panel-body">
+                        <template for:each={riskAlerts} for:item="alert">
+                            <div
+                                key={alert.key}
+                                class={alert.severityClass}
+                                data-contact-id={alert.contactId}
+                                onclick={handleRiskAlertClick}>
+                                <span class="risk-icon">{alert.severityIcon}</span>
+                                <div class="risk-text">
+                                    <span class="risk-type">{alert.riskType}</span>
+                                    <span class="risk-message">{alert.message}</span>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </template>
+
             <!-- Node Detail Panel (slide-in) -->
             <template if:true={selectedNode}>
                 <div class="detail-panel">
@@ -197,6 +227,15 @@
             </template>
             <template if:true={isTruncated}>
                 <span class="truncation-warning">Showing 500 of {totalContactCount}+ contacts</span>
+            </template>
+            <template if:true={hasRiskAlerts}>
+                <lightning-button
+                    label={riskAlertButtonLabel}
+                    variant={riskAlertButtonVariant}
+                    icon-name="utility:warning"
+                    onclick={handleRiskAlertToggle}
+                    class="risk-alert-button">
+                </lightning-button>
             </template>
         </div>
     </lightning-card>

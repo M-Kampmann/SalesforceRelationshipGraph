@@ -99,6 +99,30 @@ const MOCK_CONFIG = {
     cacheTTLMinutes: 30
 };
 
+const MOCK_RISK_ALERTS = [
+    {
+        severity: 'high',
+        riskType: 'no_economic_buyer',
+        message: 'No Economic Buyer identified',
+        contactId: null,
+        contactName: null
+    },
+    {
+        severity: 'high',
+        riskType: 'active_blocker',
+        message: 'John Smith (Blocker) is actively engaged',
+        contactId: '003xx000004TxyAAAA',
+        contactName: 'John Smith'
+    },
+    {
+        severity: 'medium',
+        riskType: 'single_threaded',
+        message: 'Only one Champion — deal at risk if they leave',
+        contactId: '003xx000004TxyZAAU',
+        contactName: 'Jane Doe'
+    }
+];
+
 const MOCK_GRAPH_DATA = {
     nodes: [
         {
@@ -135,6 +159,7 @@ const MOCK_GRAPH_DATA = {
             label: 'Decision Maker'
         }
     ],
+    riskAlerts: MOCK_RISK_ALERTS,
     isTruncated: false,
     totalContactCount: 2
 };
@@ -610,5 +635,58 @@ describe('c-relationship-graph', () => {
 
         const statsBar = element.shadowRoot.querySelector('.stats-bar');
         expect(statsBar.textContent).toContain('Hidden:');
+    });
+
+    // ─── Risk Alerts ──────────────────────────────────────────────
+
+    it('shows risk alert button in stats bar when alerts exist', async () => {
+        const element = createComponent({ recordId: '001xx000003DGbYAAW' });
+        await flushPromises();
+
+        const riskButton = element.shadowRoot.querySelector('.risk-alert-button');
+        expect(riskButton).toBeTruthy();
+        expect(riskButton.label).toBe('3 Risks');
+    });
+
+    it('does not show risk alert button when no alerts', async () => {
+        getGraphData.mockResolvedValue({
+            ...MOCK_GRAPH_DATA,
+            riskAlerts: []
+        });
+
+        const element = createComponent({ recordId: '001xx000003DGbYAAW' });
+        await flushPromises();
+
+        const riskButton = element.shadowRoot.querySelector('.risk-alert-button');
+        expect(riskButton).toBeNull();
+    });
+
+    it('toggles risk panel when alert button clicked', async () => {
+        const element = createComponent({ recordId: '001xx000003DGbYAAW' });
+        await flushPromises();
+
+        // Panel should not be visible initially
+        let riskPanel = element.shadowRoot.querySelector('.risk-panel');
+        expect(riskPanel).toBeNull();
+
+        // Click risk button to open panel
+        const riskButton = element.shadowRoot.querySelector('.risk-alert-button');
+        riskButton.click();
+        await flushPromises();
+
+        riskPanel = element.shadowRoot.querySelector('.risk-panel');
+        expect(riskPanel).toBeTruthy();
+
+        // Should render alert items
+        const alertItems = riskPanel.querySelectorAll('.risk-alert-item');
+        expect(alertItems.length).toBe(3);
+    });
+
+    it('uses destructive variant when high-severity alerts exist', async () => {
+        const element = createComponent({ recordId: '001xx000003DGbYAAW' });
+        await flushPromises();
+
+        const riskButton = element.shadowRoot.querySelector('.risk-alert-button');
+        expect(riskButton.variant).toBe('destructive');
     });
 });
