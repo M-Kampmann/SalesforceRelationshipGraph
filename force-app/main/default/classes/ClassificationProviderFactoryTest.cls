@@ -6,7 +6,7 @@ private class ClassificationProviderFactoryTest {
 
     @IsTest
     static void testGetProviderReturnsHeuristicAsFallback() {
-        // Agentforce won't be available in test context, should fall back to heuristic
+        // Einstein won't be available in test context, should fall back to heuristic
         Test.startTest();
         IClassificationProvider provider = ClassificationProviderFactory.getProvider();
         Test.stopTest();

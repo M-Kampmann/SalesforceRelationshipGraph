@@ -263,7 +263,7 @@ public with sharing class RelationshipGraphController {
             result.put('cacheTTLMinutes', config.Cache_TTL_Minutes__c);
         } else {
             // Defaults
-            result.put('classificationProvider', 'AgentforceClassificationProvider');
+            result.put('classificationProvider', 'EinsteinClassificationProvider');
             result.put('activityThresholdDays', 90);
             result.put('minInteractions', 3);
             result.put('timeDecayFactor', 0.95);

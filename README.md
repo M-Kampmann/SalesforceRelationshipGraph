@@ -16,7 +16,7 @@ Service    Calculator             Providers
   |           |                       |
   |     InteractionData          +----+----+
   |     Service                  |         |
-  |                         Heuristic  Agentforce
+  |                         Heuristic  Einstein
   |                         Provider   Provider
   +------ Custom Objects ------+
     Contact_Classification__c
@@ -24,7 +24,7 @@ Service    Calculator             Providers
     Relationship_Graph_Config__mdt
 ```
 
-**Key patterns**: Strategy (classification providers), Factory (provider selection), Bulk SOQL (6 queries for interaction data), Platform Cache (graph data TTL), Queueable (async classification).
+**Key patterns**: Strategy (classification providers), Factory (provider selection with fallback), Bulk SOQL (6 queries for interaction data), Platform Cache (graph data TTL), Queueable (async classification).
 
 ## Custom Objects
 
@@ -61,7 +61,7 @@ Custom Metadata Type for system-wide configuration.
 
 | Field | Default | Description |
 |---|---|---|
-| Classification_Provider__c | AgentforceClassificationProvider | Active classification backend |
+| Classification_Provider__c | EinsteinClassificationProvider | Active classification backend |
 | Activity_Threshold_Days__c | 90 | Activity lookback window |
 | Min_Interactions__c | 3 | Minimum interactions to display |
 | Time_Decay_Factor__c | 0.95 | Decay factor for stale relationships |
@@ -112,23 +112,26 @@ sf org open --target-org relgraph
 
 ### Apex Tests
 
-Apex tests run automatically during deployment with `--test-level RunLocalTests`:
+100 Apex tests run automatically during deployment with `--test-level RunLocalTests`:
 
 ```bash
 sf project deploy start --source-dir force-app --target-org relgraph --test-level RunLocalTests
 ```
 
 Test classes cover all services, providers, and the controller:
-- `RelationshipGraphControllerTest`
-- `GraphDataServiceTest`
-- `InteractionDataServiceTest`
-- `RelationshipStrengthCalculatorTest`
-- `HeuristicClassificationProviderTest`
-- `ClassificationProviderFactoryTest`
-- `ClassificationQueueableTest`
-- `ClassificationResultTest`
+- `RelationshipGraphControllerTest` — Controller methods, cache, config, node details
+- `GraphDataServiceTest` — Graph data building, filtering, edge generation
+- `InteractionDataServiceTest` — Bulk data fetching, co-occurrence, sentiment
+- `RelationshipStrengthCalculatorTest` — Strength scoring, time decay, persistence
+- `HeuristicClassificationProviderTest` — Rule-based classification logic
+- `EinsteinClassificationProviderTest` — Einstein API integration with HTTP mocks
+- `ClassificationProviderFactoryTest` — Provider registry, fallback logic
+- `ClassificationQueueableTest` — Async classification job
+- `ClassificationResultTest` — Validation, valid classifications
 
 ### LWC Jest Tests
+
+33 Jest tests for the LWC component:
 
 ```bash
 npm install
@@ -146,8 +149,27 @@ npm run test:unit:coverage
 The graph behavior is controlled by the `Relationship_Graph_Config__mdt.Default` custom metadata record. Modify values in Setup > Custom Metadata Types > Relationship Graph Config.
 
 To switch classification providers, update `Classification_Provider__c`:
-- `HeuristicClassificationProvider` - Rule-based (title + interaction patterns + sentiment)
-- `AgentforceClassificationProvider` - AI-powered via Agentforce (requires Einstein setup)
+- `HeuristicClassificationProvider` - Rule-based (title + interaction patterns + sentiment). Always available.
+- `EinsteinClassificationProvider` - AI-powered via Einstein Models API. Requires Einstein setup (see below).
+
+### Einstein Classification Provider Setup
+
+The `EinsteinClassificationProvider` calls the Einstein Models API (`/services/data/v62.0/einstein/llm/prompt-completions`) to classify contacts using AI. It requires:
+
+1. **Einstein/Agentforce license** enabled on the org
+2. **Remote Site Setting** for self-callout — the provider makes an HTTP callout to its own org's REST API:
+   - Go to Setup > Remote Site Settings > New
+   - Name: `SelfOrg` (or any descriptive name)
+   - URL: Your org's My Domain URL (e.g. `https://yourorg.my.salesforce.com`)
+   - Active: checked
+3. **Verify**: Open Developer Console > Execute Anonymous:
+   ```apex
+   EinsteinClassificationProvider p = new EinsteinClassificationProvider();
+   System.debug('Available: ' + p.isAvailable());
+   ```
+   Should print `Available: true`. If false, check Remote Site Setting and Einstein license.
+
+When Einstein is unavailable, the factory automatically falls back to `HeuristicClassificationProvider`. No user action needed — the fallback is transparent.
 
 ## LWC Component Usage
 

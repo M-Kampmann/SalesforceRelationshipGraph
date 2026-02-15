@@ -6,7 +6,7 @@
 public with sharing class ClassificationProviderFactory {
 
     private static final Map<String, Type> PROVIDER_REGISTRY = new Map<String, Type>{
-        'AgentforceClassificationProvider' => AgentforceClassificationProvider.class,
+        'EinsteinClassificationProvider' => EinsteinClassificationProvider.class,
         'HeuristicClassificationProvider' => HeuristicClassificationProvider.class
     };
 
@@ -56,7 +56,7 @@ public with sharing class ClassificationProviderFactory {
             return configs[0].Classification_Provider__c;
         }
 
-        return 'AgentforceClassificationProvider';
+        return 'EinsteinClassificationProvider';
     }
 
     private static IClassificationProvider createProvider(String providerName) {
