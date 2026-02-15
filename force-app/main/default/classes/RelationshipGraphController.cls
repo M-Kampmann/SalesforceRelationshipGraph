@@ -20,7 +20,8 @@ public with sharing class RelationshipGraphController {
         Id accountId,
         Boolean hidePassive,
         Integer minInteractions,
-        Integer thresholdDays
+        Integer thresholdDays,
+        Boolean showExternalContacts
     ) {
         if (accountId == null) {
             AuraHandledException ex = new AuraHandledException('Account ID is required');
@@ -29,16 +30,24 @@ public with sharing class RelationshipGraphController {
         }
 
         // Try cache first
-        String cacheKey = buildCacheKey(accountId, hidePassive, minInteractions);
+        String cacheKey = buildCacheKey(accountId, hidePassive, minInteractions, showExternalContacts);
         GraphDataService.GraphData cached = getCachedGraphData(cacheKey);
         if (cached != null) {
             return cached;
         }
 
+        // Fetch interaction bundle if external contacts requested
+        InteractionDataService.InteractionBundle externalBundle = null;
+        if (showExternalContacts == true) {
+            InteractionDataService dataService = new InteractionDataService();
+            List<Id> contactIds = dataService.getAccountContactIds(accountId);
+            externalBundle = dataService.fetchInteractionData(accountId, contactIds);
+        }
+
         // Build fresh
         GraphDataService service = new GraphDataService();
         GraphDataService.GraphData graphData = service.buildGraphData(
-            accountId, hidePassive, minInteractions, thresholdDays
+            accountId, hidePassive, minInteractions, thresholdDays, externalBundle
         );
 
         // Cache the result
@@ -56,7 +65,8 @@ public with sharing class RelationshipGraphController {
         Id accountId,
         Boolean hidePassive,
         Integer minInteractions,
-        Integer thresholdDays
+        Integer thresholdDays,
+        Boolean showExternalContacts
     ) {
         if (accountId == null) {
             AuraHandledException ex = new AuraHandledException('Account ID is required');
@@ -107,13 +117,15 @@ public with sharing class RelationshipGraphController {
         System.enqueueJob(new ClassificationQueueable(accountId, contactIds));
 
         // Build fresh graph data
+        InteractionDataService.InteractionBundle externalBundle =
+            (showExternalContacts == true) ? bundle : null;
         GraphDataService service = new GraphDataService();
         GraphDataService.GraphData graphData = service.buildGraphData(
-            accountId, hidePassive, minInteractions, thresholdDays
+            accountId, hidePassive, minInteractions, thresholdDays, externalBundle
         );
 
         // Update cache
-        String cacheKey = buildCacheKey(accountId, hidePassive, minInteractions);
+        String cacheKey = buildCacheKey(accountId, hidePassive, minInteractions, showExternalContacts);
         cacheGraphData(cacheKey, graphData);
 
         return graphData;
@@ -336,10 +348,11 @@ public with sharing class RelationshipGraphController {
         return count;
     }
 
-    private static String buildCacheKey(Id accountId, Boolean hidePassive, Integer minInteractions) {
+    private static String buildCacheKey(Id accountId, Boolean hidePassive, Integer minInteractions, Boolean showExternalContacts) {
         return 'graph_' + String.valueOf(accountId).left(15)
             + '_' + (hidePassive ? '1' : '0')
-            + '_' + minInteractions;
+            + '_' + minInteractions
+            + (showExternalContacts == true ? '_ext' : '');
     }
 
     private static GraphDataService.GraphData getCachedGraphData(String cacheKey) {

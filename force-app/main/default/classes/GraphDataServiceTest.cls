@@ -561,6 +561,173 @@ private class GraphDataServiceTest {
         System.assertEquals(0, highAlerts, 'Healthy account should have no high-severity alerts');
     }
 
+    // ─── External Contact Nodes ────────────────────────────────────
+
+    @IsTest
+    static void testExternalContactNodesCreated() {
+        Account acct = [SELECT Id FROM Account WHERE Name = 'Test Corp' LIMIT 1];
+        Account extAcct = RelationshipGraphTestDataFactory.createAccount('External Corp');
+        List<Contact> extContacts = RelationshipGraphTestDataFactory.createContacts(extAcct.Id, 3);
+
+        // Build a bundle with external contacts
+        InteractionDataService.InteractionBundle bundle =
+            new InteractionDataService.InteractionBundle();
+
+        List<Contact> internalContacts = [SELECT Id FROM Contact WHERE AccountId = :acct.Id LIMIT 2];
+        for (Contact c : internalContacts) {
+            bundle.contactSummaries.put(c.Id, new InteractionDataService.ContactInteractionSummary());
+        }
+
+        for (Integer i = 0; i < extContacts.size(); i++) {
+            Contact ext = extContacts[i];
+            InteractionDataService.ExternalContactSummary extSum =
+                new InteractionDataService.ExternalContactSummary();
+            extSum.contactId = ext.Id;
+            extSum.contactName = 'External Person ' + i;
+            extSum.contactEmail = ext.Email;
+            extSum.accountId = extAcct.Id;
+            extSum.accountName = 'External Corp';
+            extSum.sharedEmailCount = 5;
+            extSum.coOccurringInternalContactIds.add(internalContacts[0].Id);
+            bundle.externalContactSummaries.put(ext.Id, extSum);
+        }
+
+        GraphDataService service = new GraphDataService();
+
+        Test.startTest();
+        GraphDataService.GraphData graph = service.buildGraphData(
+            acct.Id, false, 0, 90, bundle
+        );
+        Test.stopTest();
+
+        Integer externalNodes = 0;
+        for (GraphDataService.GraphNode node : graph.nodes) {
+            if (node.nodeType == 'External_Contact') {
+                externalNodes++;
+                System.assertEquals('External Corp', node.accountName,
+                    'External node should have account name');
+            }
+        }
+        System.assertEquals(3, externalNodes, 'Should have 3 external contact nodes');
+    }
+
+    @IsTest
+    static void testExternalContactEdgesCrossAccount() {
+        Account acct = [SELECT Id FROM Account WHERE Name = 'Test Corp' LIMIT 1];
+        Account extAcct = RelationshipGraphTestDataFactory.createAccount('Edge Corp');
+        List<Contact> extContacts = RelationshipGraphTestDataFactory.createContacts(extAcct.Id, 1);
+
+        InteractionDataService.InteractionBundle bundle =
+            new InteractionDataService.InteractionBundle();
+
+        List<Contact> internalContacts = [SELECT Id FROM Contact WHERE AccountId = :acct.Id LIMIT 2];
+        for (Contact c : internalContacts) {
+            bundle.contactSummaries.put(c.Id, new InteractionDataService.ContactInteractionSummary());
+        }
+
+        InteractionDataService.ExternalContactSummary extSum =
+            new InteractionDataService.ExternalContactSummary();
+        extSum.contactId = extContacts[0].Id;
+        extSum.contactName = 'Edge Person';
+        extSum.sharedEmailCount = 10;
+        extSum.coOccurringInternalContactIds.add(internalContacts[0].Id);
+        extSum.coOccurringInternalContactIds.add(internalContacts[1].Id);
+        bundle.externalContactSummaries.put(extContacts[0].Id, extSum);
+
+        GraphDataService service = new GraphDataService();
+
+        Test.startTest();
+        GraphDataService.GraphData graph = service.buildGraphData(
+            acct.Id, false, 0, 90, bundle
+        );
+        Test.stopTest();
+
+        Integer crossAccountEdges = 0;
+        for (GraphDataService.GraphEdge edge : graph.edges) {
+            if (edge.edgeType == 'cross_account') {
+                crossAccountEdges++;
+            }
+        }
+        System.assertEquals(2, crossAccountEdges,
+            'Should have 2 cross_account edges (one per internal co-occurring contact)');
+    }
+
+    @IsTest
+    static void testExternalContactsCappedAt50() {
+        Account acct = [SELECT Id FROM Account WHERE Name = 'Test Corp' LIMIT 1];
+        Account extAcct = RelationshipGraphTestDataFactory.createAccount('Cap Corp');
+        // Create 60 external contacts
+        List<Contact> extContacts = new List<Contact>();
+        for (Integer i = 0; i < 60; i++) {
+            extContacts.add(new Contact(
+                FirstName = 'Ext', LastName = 'Contact ' + i,
+                AccountId = extAcct.Id, Email = 'ext' + i + '@cap.com'
+            ));
+        }
+        Database.DMLOptions dml = new Database.DMLOptions();
+        dml.DuplicateRuleHeader.allowSave = true;
+        Database.insert(extContacts, dml);
+
+        InteractionDataService.InteractionBundle bundle =
+            new InteractionDataService.InteractionBundle();
+
+        List<Contact> internalContacts = [SELECT Id FROM Contact WHERE AccountId = :acct.Id LIMIT 1];
+        bundle.contactSummaries.put(internalContacts[0].Id, new InteractionDataService.ContactInteractionSummary());
+
+        for (Contact ext : extContacts) {
+            InteractionDataService.ExternalContactSummary extSum =
+                new InteractionDataService.ExternalContactSummary();
+            extSum.contactId = ext.Id;
+            extSum.contactName = ext.Name;
+            extSum.sharedEmailCount = 1;
+            extSum.coOccurringInternalContactIds.add(internalContacts[0].Id);
+            bundle.externalContactSummaries.put(ext.Id, extSum);
+        }
+
+        GraphDataService service = new GraphDataService();
+
+        Test.startTest();
+        GraphDataService.GraphData graph = service.buildGraphData(
+            acct.Id, false, 0, 90, bundle
+        );
+        Test.stopTest();
+
+        Integer externalNodes = 0;
+        for (GraphDataService.GraphNode node : graph.nodes) {
+            if (node.nodeType == 'External_Contact') {
+                externalNodes++;
+            }
+        }
+        System.assert(externalNodes <= 50,
+            'External nodes should be capped at 50, got: ' + externalNodes);
+    }
+
+    @IsTest
+    static void testBuildGraphDataWithoutBundle() {
+        Account acct = [SELECT Id FROM Account WHERE Name = 'Test Corp' LIMIT 1];
+        GraphDataService service = new GraphDataService();
+
+        Test.startTest();
+        // 4-param version (backward compat) should work without external data
+        GraphDataService.GraphData graph4 = service.buildGraphData(
+            acct.Id, false, 0, 90
+        );
+        // 5-param with null bundle
+        GraphDataService.GraphData graph5 = service.buildGraphData(
+            acct.Id, false, 0, 90, null
+        );
+        Test.stopTest();
+
+        System.assertEquals(graph4.nodes.size(), graph5.nodes.size(),
+            '4-param and 5-param with null should produce same result');
+
+        // Verify no External_Contact nodes when no bundle
+        for (GraphDataService.GraphNode node : graph5.nodes) {
+            System.assertNotEquals('External_Contact', node.nodeType,
+                'Should have no external contacts without bundle');
+        }
+    }
+
     // ─── Strength Factor Breakdown ──────────────────────────────────
 
     @IsTest

@@ -21,7 +21,7 @@ private class RelationshipGraphControllerTest {
 
         Test.startTest();
         GraphDataService.GraphData result = RelationshipGraphController.getGraphData(
-            acct.Id, false, 0, 90
+            acct.Id, false, 0, 90, null
         );
         Test.stopTest();
 
@@ -36,7 +36,7 @@ private class RelationshipGraphControllerTest {
     static void testGetGraphDataNullId() {
         Test.startTest();
         try {
-            RelationshipGraphController.getGraphData(null, false, 0, 90);
+            RelationshipGraphController.getGraphData(null, false, 0, 90, null);
             System.assert(false, 'Should have thrown AuraHandledException');
         } catch (AuraHandledException e) {
             System.assert(e.getMessage().contains('Account ID is required'));
@@ -51,7 +51,7 @@ private class RelationshipGraphControllerTest {
         Test.startTest();
         // With very tight threshold (1 day), contacts with recent data should appear
         GraphDataService.GraphData result = RelationshipGraphController.getGraphData(
-            acct.Id, false, 0, 1
+            acct.Id, false, 0, 1, null
         );
         Test.stopTest();
 
@@ -240,7 +240,7 @@ private class RelationshipGraphControllerTest {
 
         Test.startTest();
         GraphDataService.GraphData result = RelationshipGraphController.refreshGraphData(
-            acct.Id, false, 0, 90
+            acct.Id, false, 0, 90, null
         );
         Test.stopTest();
 
@@ -252,13 +252,63 @@ private class RelationshipGraphControllerTest {
     static void testRefreshGraphDataNullId() {
         Test.startTest();
         try {
-            RelationshipGraphController.refreshGraphData(null, false, 0, 90);
+            RelationshipGraphController.refreshGraphData(null, false, 0, 90, null);
             System.assert(false, 'Should have thrown AuraHandledException');
         } catch (AuraHandledException e) {
             System.assert(e.getMessage().contains('Account ID is required'));
         }
         Test.stopTest();
     }
+
+    // ─── External Contacts ─────────────────────────────────────────
+
+    @IsTest
+    static void testGetGraphDataWithExternalContacts() {
+        Account acct = [SELECT Id FROM Account LIMIT 1];
+
+        Test.startTest();
+        GraphDataService.GraphData result = RelationshipGraphController.getGraphData(
+            acct.Id, false, 0, 90, true
+        );
+        Test.stopTest();
+
+        System.assertNotEquals(null, result, 'Should return graph data with external flag');
+        System.assert(result.nodes.size() > 0, 'Should have nodes');
+    }
+
+    @IsTest
+    static void testRefreshGraphDataWithExternalContacts() {
+        Account acct = [SELECT Id FROM Account LIMIT 1];
+
+        Test.startTest();
+        GraphDataService.GraphData result = RelationshipGraphController.refreshGraphData(
+            acct.Id, false, 0, 90, true
+        );
+        Test.stopTest();
+
+        System.assertNotEquals(null, result, 'Should return refreshed data with external flag');
+        System.assert(result.nodes.size() > 0, 'Should have nodes');
+    }
+
+    @IsTest
+    static void testGetGraphDataBackwardCompat() {
+        Account acct = [SELECT Id FROM Account LIMIT 1];
+
+        Test.startTest();
+        // null showExternalContacts should behave identically to false
+        GraphDataService.GraphData resultNull = RelationshipGraphController.getGraphData(
+            acct.Id, false, 0, 90, null
+        );
+        GraphDataService.GraphData resultFalse = RelationshipGraphController.getGraphData(
+            acct.Id, false, 0, 90, false
+        );
+        Test.stopTest();
+
+        System.assertEquals(resultNull.nodes.size(), resultFalse.nodes.size(),
+            'null and false should produce same node count');
+    }
+
+    // ─── refreshGraphData (continued) ───────────────────────────────
 
     @IsTest
     static void testRefreshGraphDataCreatesStrengths() {
@@ -268,7 +318,7 @@ private class RelationshipGraphControllerTest {
         delete [SELECT Id FROM Relationship_Strength__c WHERE Account__c = :acct.Id];
 
         Test.startTest();
-        RelationshipGraphController.refreshGraphData(acct.Id, false, 0, 90);
+        RelationshipGraphController.refreshGraphData(acct.Id, false, 0, 90, null);
         Test.stopTest();
 
         Integer strengthCount = [

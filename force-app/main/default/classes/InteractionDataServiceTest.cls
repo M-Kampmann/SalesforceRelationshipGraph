@@ -309,6 +309,165 @@ private class InteractionDataServiceTest {
         System.assertEquals('Decision Maker', summary.opportunityRole);
     }
 
+    // ─── ExternalContactSummary ────────────────────────────────────
+
+    @IsTest
+    static void testExternalContactSummaryDefaults() {
+        InteractionDataService.ExternalContactSummary ext =
+            new InteractionDataService.ExternalContactSummary();
+
+        System.assertEquals(0, ext.sharedEmailCount);
+        System.assertEquals(0, ext.sharedEventCount);
+        System.assertNotEquals(null, ext.coOccurringInternalContactIds);
+        System.assertEquals(0, ext.coOccurringInternalContactIds.size());
+        System.assertEquals(0, ext.getTotalSharedInteractions());
+    }
+
+    @IsTest
+    static void testExternalContactSummaryComparable() {
+        InteractionDataService.ExternalContactSummary ext1 =
+            new InteractionDataService.ExternalContactSummary();
+        ext1.sharedEmailCount = 5;
+        ext1.sharedEventCount = 3;
+
+        InteractionDataService.ExternalContactSummary ext2 =
+            new InteractionDataService.ExternalContactSummary();
+        ext2.sharedEmailCount = 2;
+        ext2.sharedEventCount = 1;
+
+        // ext1 has more total (8 vs 3), so should sort first (descending)
+        System.assertEquals(8, ext1.getTotalSharedInteractions());
+        System.assertEquals(3, ext2.getTotalSharedInteractions());
+
+        // compareTo returns negative if this should come before other (descending)
+        System.assert(ext1.compareTo(ext2) < 0,
+            'Higher interaction count should sort first');
+        System.assert(ext2.compareTo(ext1) > 0,
+            'Lower interaction count should sort after');
+    }
+
+    @IsTest
+    static void testInteractionBundleExternalContactsInitialized() {
+        InteractionDataService.InteractionBundle bundle =
+            new InteractionDataService.InteractionBundle();
+
+        System.assertNotEquals(null, bundle.externalContactSummaries,
+            'externalContactSummaries should be initialized');
+        System.assertEquals(0, bundle.externalContactSummaries.size());
+    }
+
+    @IsTest
+    static void testDiscoverExternalEmailContacts() {
+        // Create two accounts with contacts
+        Account acct1 = RelationshipGraphTestDataFactory.createAccount('Account One');
+        Account acct2 = RelationshipGraphTestDataFactory.createAccount('Account Two');
+        List<Contact> contacts1 = RelationshipGraphTestDataFactory.createContacts(acct1.Id, 2);
+        List<Contact> contacts2 = RelationshipGraphTestDataFactory.createContacts(acct2.Id, 1);
+
+        // Create a shared email linking contacts from both accounts
+        EmailMessage em = new EmailMessage(
+            Subject = 'Shared discussion',
+            TextBody = 'Hello',
+            RelatedToId = acct1.Id,
+            Status = '3'  // Sent
+        );
+        insert em;
+
+        List<EmailMessageRelation> relations = new List<EmailMessageRelation>();
+        relations.add(new EmailMessageRelation(
+            EmailMessageId = em.Id,
+            RelationId = contacts1[0].Id,
+            RelationType = 'ToAddress'
+        ));
+        relations.add(new EmailMessageRelation(
+            EmailMessageId = em.Id,
+            RelationId = contacts2[0].Id,
+            RelationType = 'CcAddress'
+        ));
+        insert relations;
+
+        InteractionDataService service = new InteractionDataService();
+        List<Id> contactIds = new List<Id>{ contacts1[0].Id, contacts1[1].Id };
+
+        Test.startTest();
+        InteractionDataService.InteractionBundle bundle =
+            service.fetchInteractionData(acct1.Id, contactIds);
+        Test.stopTest();
+
+        // The contact from account 2 should be discovered as external
+        System.assert(bundle.externalContactSummaries.containsKey(contacts2[0].Id),
+            'Contact from Account Two should be discovered as external');
+        InteractionDataService.ExternalContactSummary ext =
+            bundle.externalContactSummaries.get(contacts2[0].Id);
+        System.assert(ext.sharedEmailCount > 0,
+            'Should have shared email count');
+    }
+
+    @IsTest
+    static void testExternalContactHydration() {
+        Account acct1 = RelationshipGraphTestDataFactory.createAccount('Hydrate Test Acct');
+        Account acct2 = RelationshipGraphTestDataFactory.createAccount('External Acct');
+        List<Contact> contacts1 = RelationshipGraphTestDataFactory.createContacts(acct1.Id, 1);
+        List<Contact> contacts2 = RelationshipGraphTestDataFactory.createContacts(acct2.Id, 1);
+
+        // Create shared email
+        EmailMessage em = new EmailMessage(
+            Subject = 'Hydration test',
+            TextBody = 'Test',
+            RelatedToId = acct1.Id,
+            Status = '3'
+        );
+        insert em;
+
+        insert new List<EmailMessageRelation>{
+            new EmailMessageRelation(
+                EmailMessageId = em.Id,
+                RelationId = contacts1[0].Id,
+                RelationType = 'ToAddress'
+            ),
+            new EmailMessageRelation(
+                EmailMessageId = em.Id,
+                RelationId = contacts2[0].Id,
+                RelationType = 'CcAddress'
+            )
+        };
+
+        InteractionDataService service = new InteractionDataService();
+
+        Test.startTest();
+        InteractionDataService.InteractionBundle bundle =
+            service.fetchInteractionData(acct1.Id, new List<Id>{ contacts1[0].Id });
+        Test.stopTest();
+
+        InteractionDataService.ExternalContactSummary ext =
+            bundle.externalContactSummaries.get(contacts2[0].Id);
+        System.assertNotEquals(null, ext, 'External contact should be discovered');
+        System.assertNotEquals(null, ext.contactName,
+            'External contact name should be hydrated');
+        System.assertEquals(acct2.Id, ext.accountId,
+            'External contact should reference its own account');
+        System.assertEquals('External Acct', ext.accountName,
+            'External account name should be hydrated');
+    }
+
+    @IsTest
+    static void testExternalDiscoveryNoExternalsWhenNoSharedEmails() {
+        Account acct = [SELECT Id FROM Account LIMIT 1];
+        List<Contact> contacts = [SELECT Id FROM Contact WHERE AccountId = :acct.Id];
+        List<Id> contactIds = new List<Id>();
+        for (Contact c : contacts) contactIds.add(c.Id);
+
+        InteractionDataService service = new InteractionDataService();
+
+        Test.startTest();
+        InteractionDataService.InteractionBundle bundle =
+            service.fetchInteractionData(acct.Id, contactIds);
+        Test.stopTest();
+
+        System.assertEquals(0, bundle.externalContactSummaries.size(),
+            'No shared emails means no external contacts');
+    }
+
     // ─── Bulk Behavior ─────────────────────────────────────────────
 
     @IsTest

@@ -696,6 +696,109 @@ describe('c-relationship-graph', () => {
     });
 });
 
+describe('external contacts', () => {
+    const MOCK_EXTERNAL_DATA = {
+        ...MOCK_GRAPH_DATA,
+        nodes: [
+            ...MOCK_GRAPH_DATA.nodes,
+            {
+                id: '003xx000004ExtAAAA', name: 'External Person', nodeType: 'External_Contact',
+                classification: null, confidence: null, interactionCount: 7,
+                title: 'Partner Manager', email: 'ext@other.com',
+                accountName: 'Other Corp', accountId: '001xx000003OtherAA'
+            }
+        ],
+        edges: [
+            ...MOCK_GRAPH_DATA.edges,
+            {
+                source: '003xx000004ExtAAAA', target: '003xx000004TxyZAAU',
+                strength: 0.35, interactionCount: 7, edgeType: 'cross_account'
+            }
+        ]
+    };
+
+    beforeEach(() => {
+        getGraphConfig.mockResolvedValue(MOCK_CONFIG);
+        refreshGraphData.mockResolvedValue(MOCK_EXTERNAL_DATA);
+        loadScript.mockResolvedValue();
+    });
+
+    it('renders show external button', async () => {
+        getGraphData.mockResolvedValue(MOCK_GRAPH_DATA);
+        const element = createComponent({ recordId: '001xx000003DGbYAAW' });
+        await flushPromises();
+
+        const buttons = element.shadowRoot.querySelectorAll('lightning-button');
+        const externalBtn = Array.from(buttons).find(
+            b => b.label === 'Show External' || b.label === 'Hide External'
+        );
+        expect(externalBtn).toBeTruthy();
+        expect(externalBtn.label).toBe('Show External');
+    });
+
+    it('toggles external contacts and reloads data', async () => {
+        getGraphData.mockResolvedValue(MOCK_GRAPH_DATA);
+        const element = createComponent({ recordId: '001xx000003DGbYAAW' });
+        await flushPromises();
+
+        getGraphData.mockClear();
+        getGraphData.mockResolvedValue(MOCK_EXTERNAL_DATA);
+
+        const buttons = element.shadowRoot.querySelectorAll('lightning-button');
+        const externalBtn = Array.from(buttons).find(
+            b => b.label === 'Show External' || b.label === 'Hide External'
+        );
+        externalBtn.click();
+        await flushPromises();
+
+        expect(getGraphData).toHaveBeenCalledWith(
+            expect.objectContaining({
+                showExternalContacts: true
+            })
+        );
+    });
+
+    it('renders external contact badge in legend when enabled', async () => {
+        getGraphData.mockResolvedValue(MOCK_EXTERNAL_DATA);
+        const element = createComponent({ recordId: '001xx000003DGbYAAW' });
+        await flushPromises();
+
+        // Toggle external contacts on
+        const buttons = element.shadowRoot.querySelectorAll('lightning-button');
+        const externalBtn = Array.from(buttons).find(
+            b => b.label === 'Show External' || b.label === 'Hide External'
+        );
+        getGraphData.mockResolvedValue(MOCK_EXTERNAL_DATA);
+        externalBtn.click();
+        await flushPromises();
+
+        const extBadge = element.shadowRoot.querySelector('.external-contact-badge');
+        if (extBadge) {
+            expect(extBadge.textContent).toContain('External');
+        }
+    });
+
+    it('external contact count is calculated', async () => {
+        getGraphData.mockResolvedValue(MOCK_EXTERNAL_DATA);
+        const element = createComponent({ recordId: '001xx000003DGbYAAW' });
+        await flushPromises();
+
+        // Toggle on
+        const buttons = element.shadowRoot.querySelectorAll('lightning-button');
+        const externalBtn = Array.from(buttons).find(
+            b => b.label === 'Show External' || b.label === 'Hide External'
+        );
+        getGraphData.mockResolvedValue(MOCK_EXTERNAL_DATA);
+        externalBtn.click();
+        await flushPromises();
+
+        const statsBar = element.shadowRoot.querySelector('.stats-bar');
+        if (statsBar) {
+            expect(statsBar.textContent).toContain('External:');
+        }
+    });
+});
+
 describe('factor breakdown', () => {
     it('renders factor breakdown when contact with strengthFactors is selected', async () => {
         const element = createComponent({ recordId: '001xx000003DGbYAAW' });

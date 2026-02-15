@@ -19,6 +19,16 @@ public with sharing class GraphDataService {
         Integer minInteractions,
         Integer thresholdDays
     ) {
+        return buildGraphData(accountId, hidePassive, minInteractions, thresholdDays, null);
+    }
+
+    public GraphData buildGraphData(
+        Id accountId,
+        Boolean hidePassive,
+        Integer minInteractions,
+        Integer thresholdDays,
+        InteractionDataService.InteractionBundle externalBundle
+    ) {
         GraphData graph = new GraphData();
 
         // 1. Get account info
@@ -152,6 +162,11 @@ public with sharing class GraphDataService {
         // 7. Add opportunities as nodes
         addOpportunityNodes(accountId, includedContactIds, graph);
 
+        // 7.5 Add external contact nodes if bundle provided
+        if (externalBundle != null && !externalBundle.externalContactSummaries.isEmpty()) {
+            addExternalContactNodes(externalBundle, includedContactIds, graph);
+        }
+
         // 8. Detect relationship risks
         detectRisks(graph);
 
@@ -264,6 +279,53 @@ public with sharing class GraphDataService {
         }
     }
 
+    private void addExternalContactNodes(
+        InteractionDataService.InteractionBundle bundle,
+        Set<Id> includedContactIds,
+        GraphData graph
+    ) {
+        // Filter to hydrated externals only
+        List<InteractionDataService.ExternalContactSummary> hydrated =
+            new List<InteractionDataService.ExternalContactSummary>();
+        for (InteractionDataService.ExternalContactSummary ext : bundle.externalContactSummaries.values()) {
+            if (String.isNotBlank(ext.contactName)) {
+                hydrated.add(ext);
+            }
+        }
+
+        // Sort by total shared interactions descending
+        hydrated.sort();
+
+        // Cap at 50
+        Integer cap = Math.min(hydrated.size(), 50);
+
+        for (Integer i = 0; i < cap; i++) {
+            InteractionDataService.ExternalContactSummary ext = hydrated[i];
+            Integer totalShared = ext.getTotalSharedInteractions();
+
+            GraphNode node = new GraphNode(
+                ext.contactId, ext.contactName, 'External_Contact',
+                null, ext.contactTitle, totalShared, 0
+            );
+            node.email = ext.contactEmail;
+            node.accountName = ext.accountName;
+            node.accountId = ext.accountId != null ? String.valueOf(ext.accountId) : null;
+            graph.nodes.add(node);
+
+            // Add edges from external to each co-occurring internal contact
+            for (Id internalId : ext.coOccurringInternalContactIds) {
+                if (!includedContactIds.contains(internalId)) continue;
+
+                graph.edges.add(new GraphEdge(
+                    ext.contactId, internalId,
+                    Math.min(totalShared / 20.0, 1.0),
+                    totalShared,
+                    'cross_account'
+                ));
+            }
+        }
+    }
+
     // ─── Inner Classes (serialized to JSON for LWC) ─────────────────
 
     public class GraphData {
@@ -298,6 +360,8 @@ public with sharing class GraphDataService {
         @AuraEnabled public Datetime lastInteractionDate { get; set; }
         @AuraEnabled public Decimal strength { get; set; }
         @AuraEnabled public List<RelationshipStrengthCalculator.FactorBreakdown> strengthFactors { get; set; }
+        @AuraEnabled public String accountName { get; set; }        // For External_Contact nodes
+        @AuraEnabled public String accountId { get; set; }          // For External_Contact nodes
 
         public GraphNode(
             Id recordId, String name, String nodeType, String classification,

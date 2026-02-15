@@ -40,6 +40,7 @@ public with sharing class InteractionDataService {
         fetchEventData(accountId, contactIdSet, bundle);
         fetchTaskData(accountId, contactIdSet, bundle);
         fetchOpportunityRoles(accountId, contactIdSet, bundle);
+        discoverExternalContacts(accountId, contactIdSet, bundle);
         computeCoOccurrences(bundle);
 
         return bundle;
@@ -220,6 +221,97 @@ public with sharing class InteractionDataService {
     }
 
     /**
+     * Discover contacts from other accounts who appear on the same emails/meetings.
+     */
+    private void discoverExternalContacts(Id accountId, Set<Id> contactIds, InteractionBundle bundle) {
+        // Discover via emails
+        Set<Id> emailIds = bundle.emailCoOccurrences.keySet();
+        if (!emailIds.isEmpty()) {
+            for (EmailMessageRelation emr : [
+                SELECT EmailMessageId, RelationId
+                FROM EmailMessageRelation
+                WHERE EmailMessageId IN :emailIds
+                AND RelationId NOT IN :contactIds
+                WITH SECURITY_ENFORCED
+                LIMIT 5000
+            ]) {
+                Id relId = emr.RelationId;
+                if (relId == null || relId.getSObjectType() != Contact.SObjectType) continue;
+
+                ExternalContactSummary ext = bundle.externalContactSummaries.get(relId);
+                if (ext == null) {
+                    ext = new ExternalContactSummary();
+                    ext.contactId = relId;
+                    bundle.externalContactSummaries.put(relId, ext);
+                }
+                ext.sharedEmailCount++;
+
+                List<Id> internalOnEmail = bundle.emailCoOccurrences.get(emr.EmailMessageId);
+                if (internalOnEmail != null) {
+                    ext.coOccurringInternalContactIds.addAll(internalOnEmail);
+                }
+            }
+        }
+
+        // Discover via events (EventRelation may not be available in all orgs)
+        Set<Id> eventIds = bundle.eventCoOccurrences.keySet();
+        if (!eventIds.isEmpty()) {
+            try {
+                for (SObject er : Database.query(
+                    'SELECT EventId, RelationId FROM EventRelation ' +
+                    'WHERE EventId IN :eventIds AND RelationId NOT IN :contactIds ' +
+                    'WITH SECURITY_ENFORCED LIMIT 5000'
+                )) {
+                    Id relId = (Id) er.get('RelationId');
+                    if (relId == null || relId.getSObjectType() != Contact.SObjectType) continue;
+                    Id eventId = (Id) er.get('EventId');
+
+                    ExternalContactSummary ext = bundle.externalContactSummaries.get(relId);
+                    if (ext == null) {
+                        ext = new ExternalContactSummary();
+                        ext.contactId = relId;
+                        bundle.externalContactSummaries.put(relId, ext);
+                    }
+                    ext.sharedEventCount++;
+
+                    List<Id> internalOnEvent = bundle.eventCoOccurrences.get(eventId);
+                    if (internalOnEvent != null) {
+                        ext.coOccurringInternalContactIds.addAll(internalOnEvent);
+                    }
+                }
+            } catch (Exception e) {
+                // EventRelation not available — skip silently
+                System.debug(LoggingLevel.WARN, 'EventRelation query failed: ' + e.getMessage());
+            }
+        }
+
+        // Hydrate external contacts with name, title, email, account info
+        hydrateExternalContacts(bundle);
+    }
+
+    private void hydrateExternalContacts(InteractionBundle bundle) {
+        if (bundle.externalContactSummaries.isEmpty()) return;
+
+        Set<Id> extIds = bundle.externalContactSummaries.keySet();
+        for (Contact c : [
+            SELECT Id, Name, Title, Email, AccountId, Account.Name
+            FROM Contact
+            WHERE Id IN :extIds
+            WITH SECURITY_ENFORCED
+            LIMIT 200
+        ]) {
+            ExternalContactSummary ext = bundle.externalContactSummaries.get(c.Id);
+            if (ext != null) {
+                ext.contactName = c.Name;
+                ext.contactTitle = c.Title;
+                ext.contactEmail = c.Email;
+                ext.accountId = c.AccountId;
+                ext.accountName = c.Account?.Name;
+            }
+        }
+    }
+
+    /**
      * Compute co-occurrence counts: how many times two contacts appear on the same email or meeting.
      */
     private void computeCoOccurrences(InteractionBundle bundle) {
@@ -278,12 +370,14 @@ public with sharing class InteractionDataService {
         public Map<Id, List<Id>> emailCoOccurrences { get; set; }
         public Map<Id, List<Id>> eventCoOccurrences { get; set; }
         public Map<String, Integer> coOccurrencePairs { get; set; }
+        public Map<Id, ExternalContactSummary> externalContactSummaries { get; set; }
 
         public InteractionBundle() {
             this.contactSummaries = new Map<Id, ContactInteractionSummary>();
             this.emailCoOccurrences = new Map<Id, List<Id>>();
             this.eventCoOccurrences = new Map<Id, List<Id>>();
             this.coOccurrencePairs = new Map<String, Integer>();
+            this.externalContactSummaries = new Map<Id, ExternalContactSummary>();
         }
 
         public ContactInteractionSummary getContactSummary(Id contactId) {
@@ -335,6 +429,36 @@ public with sharing class InteractionDataService {
          */
         public Integer getTotalInteractions() {
             return emailsSent + emailsReceived + meetingsAttended + tasksCompleted;
+        }
+    }
+
+    /**
+     * Summary of an external contact discovered from shared emails/events.
+     */
+    public class ExternalContactSummary implements Comparable {
+        public Id contactId { get; set; }
+        public String contactName { get; set; }
+        public String contactTitle { get; set; }
+        public String contactEmail { get; set; }
+        public Id accountId { get; set; }
+        public String accountName { get; set; }
+        public Integer sharedEmailCount { get; set; }
+        public Integer sharedEventCount { get; set; }
+        public Set<Id> coOccurringInternalContactIds { get; set; }
+
+        public ExternalContactSummary() {
+            this.sharedEmailCount = 0;
+            this.sharedEventCount = 0;
+            this.coOccurringInternalContactIds = new Set<Id>();
+        }
+
+        public Integer getTotalSharedInteractions() {
+            return sharedEmailCount + sharedEventCount;
+        }
+
+        public Integer compareTo(Object other) {
+            ExternalContactSummary that = (ExternalContactSummary) other;
+            return that.getTotalSharedInteractions() - this.getTotalSharedInteractions();
         }
     }
 }

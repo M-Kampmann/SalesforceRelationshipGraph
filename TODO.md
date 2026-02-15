@@ -14,7 +14,7 @@
 - [ ] **Additional LLM providers** — Add Claude API, OpenAI, etc. as classification providers. The `IClassificationProvider` interface and `ClassificationProviderFactory` registry are ready for extension.
 - [ ] **Configurable risk thresholds** — Stale champion threshold (currently 30 days), active blocker threshold (currently 5 interactions), weak buyer threshold (currently 0.3 strength) are hardcoded in `GraphDataService.detectRisks()`. Consider adding to `Relationship_Graph_Config__mdt`.
 - [ ] **Risk alert history/trending** — Track how risk alerts change over time. Currently computed fresh on each graph load with no persistence.
-- [ ] **Multi-account view** — Cross-account relationship map showing contacts bridging multiple deals.
+- [x] **Cross-account contact discovery** — External contacts from other accounts discovered via shared emails/meetings, rendered as teal hexagon nodes with dashed cross-account edges.
 - [ ] **Timeline/history mode** — Animate relationship evolution over time using `Last_Interaction_Date__c` and `Last_Classified__c`.
 - [ ] **Contact-to-Contact strength edges** — Co-occurrence data exists in `Relationship_Strength__c` (Target_Object_Type = Contact) but graph only partially renders these. Full internal alliance/silo visualization.
 - [ ] **Influence path finder** — "How do I reach the Economic Buyer?" — shortest path through Champions and Influencers.
@@ -397,3 +397,138 @@ Run these after deploying the configurable strength factors feature.
 - Graph still loads with scores calculated using hardcoded fallback weights
 - Scores match original behavior (Email Sent=1.0, Email Received=1.5, Meeting=3.0, etc.)
 - Re-activate all records after testing
+
+---
+
+## Production UAT — Cross-Account Contact Discovery
+
+Run these after deploying the external contacts feature. Requires Email-to-Salesforce or Einstein Activity Capture for email data, and/or Calendar sync for event data.
+
+### Pre-requisites
+
+- [ ] Package deployed successfully
+- [ ] Account has contacts with email/meeting activity captured in Salesforce
+- [ ] At least some emails/meetings include recipients from OTHER accounts
+
+### Test 25: Show External Toggle Appears
+
+**Steps:**
+1. Navigate to an Account with the Relationship Graph component
+2. Look at the toolbar button group
+
+**Expected:**
+- A "Show External" button appears with a globe icon (`utility:world`)
+- Button is in neutral state by default (external contacts not shown)
+
+### Test 26: Toggle Shows External Contacts
+
+**Steps:**
+1. Click "Show External" on an Account with shared email/meeting data
+2. Wait for the graph to reload
+
+**Expected:**
+- Button label changes to "Hide External"
+- Teal hexagon nodes appear representing contacts from other accounts
+- Teal dashed edges connect external contacts to internal contacts they share communications with
+- "External ({count})" badge appears in the filter legend bar
+- Stats bar shows "External: {count}"
+
+### Test 27: External Contact Detail Panel
+
+**Steps:**
+1. With external contacts visible, click on a teal hexagon node
+2. Review the detail panel
+
+**Expected:**
+- Detail panel shows the contact's name, title, and email
+- "Account" field shows the external contact's account name
+- "Type" field shows "External Contact"
+- No classification override dropdown (external contacts don't have classifications)
+- "View Record" button navigates to the contact record
+
+### Test 28: External Contact Tooltip
+
+**Steps:**
+1. Hover over a teal hexagon node on the canvas
+
+**Expected:**
+- Tooltip shows contact name and title
+- "Account: {external account name}" line appears
+- Shared interaction count displayed
+
+### Test 29: Toggle Off Removes External Contacts
+
+**Steps:**
+1. Click "Hide External" to toggle off
+
+**Expected:**
+- Teal hexagon nodes disappear
+- Teal dashed edges disappear
+- External badge removed from filter legend
+- External count removed from stats bar
+- Button reverts to "Show External"
+
+### Test 30: Cross-Account Edge Strength
+
+**Steps:**
+1. With external contacts visible, hover over a teal dashed edge
+
+**Expected:**
+- Edge tooltip shows shared interaction count
+- Thicker edges indicate more shared interactions
+- Edge color is teal (`#00897b`) with dash pattern
+
+### Test 31: External Contact Discovery via Execute Anonymous
+
+**Steps:**
+1. Run in Developer Console:
+   ```apex
+   InteractionDataService svc = new InteractionDataService();
+   List<Id> cIds = svc.getAccountContactIds('<account-id>');
+   InteractionDataService.InteractionBundle bundle = svc.fetchInteractionData('<account-id>', cIds);
+   System.debug('External contacts found: ' + bundle.externalContactSummaries.size());
+   for (InteractionDataService.ExternalContactSummary ext : bundle.externalContactSummaries.values()) {
+       System.debug(ext.contactName + ' (' + ext.accountName + ') — '
+           + ext.sharedEmailCount + ' emails, ' + ext.sharedEventCount + ' events');
+   }
+   ```
+
+**Expected:**
+- External contacts from other accounts are listed
+- Each shows their account name and shared email/event counts
+- Only Contact records appear (no Users or Leads)
+
+### Test 32: External Contact Cap at 50
+
+**Steps:**
+1. Find an Account with many cross-account communications (50+ external contacts)
+2. Toggle "Show External"
+
+**Expected:**
+- Maximum of 50 external contact nodes appear
+- External contacts are sorted by total shared interactions (most shared first)
+- Less-connected external contacts are excluded
+
+### Test 33: No External Contacts When No Shared Data
+
+**Steps:**
+1. Navigate to an Account with no email/meeting data (or where all communications are internal)
+2. Toggle "Show External"
+
+**Expected:**
+- Graph reloads without errors
+- No teal hexagon nodes appear
+- External count shows 0 or the badge doesn't appear
+
+### Test 34: Cache Separation (External vs Non-External)
+
+**Steps:**
+1. Load graph without external contacts
+2. Toggle "Show External" — graph reloads with external data
+3. Toggle "Hide External" — graph reloads without external data
+4. Toggle "Show External" again — graph loads faster from cache
+
+**Expected:**
+- Cached and non-cached views show different data
+- External toggle correctly triggers separate cache entries
+- No stale data between toggled views

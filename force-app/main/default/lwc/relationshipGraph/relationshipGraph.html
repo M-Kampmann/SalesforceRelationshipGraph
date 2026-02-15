@@ -15,6 +15,12 @@
                     onclick={toggleHidePassive}
                     variant={hidePassiveVariant}>
                 </lightning-button>
+                <lightning-button
+                    label={showExternalLabel}
+                    icon-name="utility:world"
+                    onclick={toggleExternalContacts}
+                    variant={showExternalVariant}>
+                </lightning-button>
             </lightning-button-group>
         </div>
 
@@ -28,6 +34,12 @@
                     onclick={handleFilterClick}
                     data-classification={filter.value}>
                     {filter.label}
+                </span>
+            </template>
+            <template if:true={showExternalContacts}>
+                <span class="filter-badge external-contact-badge"
+                      style="background-color: #00897b; color: #fff;">
+                    External ({externalContactCount})
                 </span>
             </template>
             <lightning-input
@@ -152,6 +164,19 @@
                                 </p>
                             </template>
                         </template>
+                        <!-- External Contact: Account info -->
+                        <template if:true={isExternalContactNode}>
+                            <template if:true={selectedNode.accountName}>
+                                <p class="detail-field">
+                                    <span class="detail-label">Account</span>
+                                    <span class="detail-value">{selectedNode.accountName}</span>
+                                </p>
+                            </template>
+                            <p class="detail-field">
+                                <span class="detail-label">Type</span>
+                                <span class="detail-value">External Contact</span>
+                            </p>
+                        </template>
                         <!-- Opportunity: Stage, Amount, Close Date -->
                         <template if:true={isOpportunityNode}>
                             <p class="detail-field">
@@ -245,6 +270,9 @@
             <span>Edges: {edgeCount}</span>
             <template if:true={hidePassive}>
                 <span>Hidden: {hiddenCount} passive contacts</span>
+            </template>
+            <template if:true={showExternalContacts}>
+                <span>External: {externalContactCount}</span>
             </template>
             <template if:true={isTruncated}>
                 <span class="truncation-warning">Showing 500 of {totalContactCount}+ contacts</span>

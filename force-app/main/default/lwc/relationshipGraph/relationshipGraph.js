@@ -23,12 +23,14 @@ const CLASSIFICATION_COLORS = {
 const NODE_TYPE_SHAPES = {
     'Account': 'diamond',
     'Contact': 'circle',
-    'Opportunity': 'square'
+    'Opportunity': 'square',
+    'External_Contact': 'hexagon'
 };
 
 const NODE_TYPE_COLORS = {
     'Account': '#0176d3',
-    'Opportunity': '#ff9800'
+    'Opportunity': '#ff9800',
+    'External_Contact': '#00897b'
 };
 
 export default class RelationshipGraph extends NavigationMixin(LightningElement) {
@@ -48,6 +50,8 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
     totalContactCount = 0;
     riskAlerts = [];
     showRiskPanel = false;
+    showExternalContacts = false;
+    externalContactCount = 0;
     riskNodeIds = new Map(); // nodeId → highest severity
 
     d3Initialized = false;
@@ -114,7 +118,8 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
                 accountId: this.recordId,
                 hidePassive: this.hidePassive,
                 minInteractions: this.minInteractions,
-                thresholdDays: this.config.activityThresholdDays || 90
+                thresholdDays: this.config.activityThresholdDays || 90,
+                showExternalContacts: this.showExternalContacts
             });
             this.processGraphData(data);
         } catch (error) {
@@ -133,6 +138,9 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
         this.graphData = data;
         this.isTruncated = data.isTruncated || false;
         this.totalContactCount = data.totalContactCount || 0;
+        this.externalContactCount = (data.nodes || []).filter(
+            n => n.nodeType === 'External_Contact'
+        ).length;
 
         // Extract risk alerts
         this.riskAlerts = (data.riskAlerts || []).map((alert, idx) => ({
@@ -246,6 +254,7 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
                 .distance(d => {
                     if (d.edgeType === 'co_occurrence') return 100;
                     if (d.edgeType === 'opportunity_role') return 150;
+                    if (d.edgeType === 'cross_account') return 180;
                     return 120;
                 })
                 .strength(d => d.strength || 0.3)
@@ -311,6 +320,9 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
         } else if (edge.edgeType === 'opportunity_role') {
             ctx.strokeStyle = 'rgba(255, 152, 0, 0.5)';
             ctx.setLineDash([]);
+        } else if (edge.edgeType === 'cross_account') {
+            ctx.strokeStyle = 'rgba(0, 137, 123, 0.5)';
+            ctx.setLineDash([6, 3]);
         } else {
             ctx.strokeStyle = 'rgba(50, 50, 50, 0.4)';
             ctx.setLineDash([]);
@@ -347,6 +359,15 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
         } else if (node.nodeType === 'Opportunity') {
             // Square shape
             ctx.rect(node.x - radius, node.y - radius, radius * 2, radius * 2);
+        } else if (node.nodeType === 'External_Contact') {
+            // Hexagon shape
+            for (let i = 0; i < 6; i++) {
+                const angle = (Math.PI / 3) * i - Math.PI / 2;
+                const px = node.x + radius * Math.cos(angle);
+                const py = node.y + radius * Math.sin(angle);
+                if (i === 0) { ctx.moveTo(px, py); } else { ctx.lineTo(px, py); }
+            }
+            ctx.closePath();
         } else {
             // Circle for contacts
             ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI);
@@ -397,7 +418,9 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
     drawTooltip(ctx, node) {
         const lines = [node.name];
         if (node.title) lines.push(node.title);
-        if (node.nodeType === 'Opportunity' && node.classification) {
+        if (node.nodeType === 'External_Contact' && node.accountName) {
+            lines.push('Account: ' + node.accountName);
+        } else if (node.nodeType === 'Opportunity' && node.classification) {
             lines.push('Stage: ' + node.classification);
             if (node.amount != null) {
                 lines.push('$' + Number(node.amount).toLocaleString());
@@ -406,7 +429,9 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
             lines.push(node.classification);
         }
         if (node.interactionCount) {
-            lines.push(node.interactionCount + ' interactions');
+            const label = node.nodeType === 'External_Contact'
+                ? ' shared interactions' : ' interactions';
+            lines.push(node.interactionCount + label);
         }
 
         const padding = 8;
@@ -439,6 +464,12 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
     getNodeRadius(node) {
         if (node.nodeType === 'Account') return 24;
         if (node.nodeType === 'Opportunity') return 14;
+        if (node.nodeType === 'External_Contact') {
+            const base = 8;
+            const maxExtra = 8;
+            const interactions = node.interactionCount || 0;
+            return base + Math.min(interactions / 5, maxExtra);
+        }
 
         // Contact radius based on interaction count
         const base = 10;
@@ -448,6 +479,9 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
     }
 
     getNodeColor(node) {
+        if (node.nodeType === 'External_Contact') {
+            return NODE_TYPE_COLORS['External_Contact'];
+        }
         if (node.nodeType !== 'Contact') {
             return NODE_TYPE_COLORS[node.nodeType] || '#9e9e9e';
         }
@@ -587,7 +621,8 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
                 accountId: this.recordId,
                 hidePassive: this.hidePassive,
                 minInteractions: this.minInteractions,
-                thresholdDays: this.config.activityThresholdDays || 90
+                thresholdDays: this.config.activityThresholdDays || 90,
+                showExternalContacts: this.showExternalContacts
             });
             this.processGraphData(data);
             this.showToast('Success', 'Graph data refreshed', 'success');
@@ -600,6 +635,11 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
 
     toggleHidePassive() {
         this.hidePassive = !this.hidePassive;
+        this.loadGraphData();
+    }
+
+    toggleExternalContacts() {
+        this.showExternalContacts = !this.showExternalContacts;
         this.loadGraphData();
     }
 
@@ -748,6 +788,18 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
 
     get isOpportunityNode() {
         return this.selectedNode && this.selectedNode.nodeType === 'Opportunity';
+    }
+
+    get isExternalContactNode() {
+        return this.selectedNode && this.selectedNode.nodeType === 'External_Contact';
+    }
+
+    get showExternalLabel() {
+        return this.showExternalContacts ? 'Hide External' : 'Show External';
+    }
+
+    get showExternalVariant() {
+        return this.showExternalContacts ? 'brand' : 'neutral';
     }
 
     get formattedAmount() {
