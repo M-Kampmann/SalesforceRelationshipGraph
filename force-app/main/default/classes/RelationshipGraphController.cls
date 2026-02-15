@@ -21,7 +21,8 @@ public with sharing class RelationshipGraphController {
         Boolean hidePassive,
         Integer minInteractions,
         Integer thresholdDays,
-        Boolean showExternalContacts
+        Boolean showExternalContacts,
+        Boolean showHierarchy
     ) {
         if (accountId == null) {
             AuraHandledException ex = new AuraHandledException('Account ID is required');
@@ -30,7 +31,7 @@ public with sharing class RelationshipGraphController {
         }
 
         // Try cache first
-        String cacheKey = buildCacheKey(accountId, hidePassive, minInteractions, showExternalContacts);
+        String cacheKey = buildCacheKey(accountId, hidePassive, minInteractions, showExternalContacts, showHierarchy);
         GraphDataService.GraphData cached = getCachedGraphData(cacheKey);
         if (cached != null) {
             return cached;
@@ -45,9 +46,11 @@ public with sharing class RelationshipGraphController {
         }
 
         // Build fresh
+        Relationship_Graph_Config__mdt config = getConfig();
         GraphDataService service = new GraphDataService();
         GraphDataService.GraphData graphData = service.buildGraphData(
-            accountId, hidePassive, minInteractions, thresholdDays, externalBundle
+            accountId, hidePassive, minInteractions, thresholdDays,
+            externalBundle, showHierarchy, config
         );
 
         // Cache the result
@@ -66,7 +69,8 @@ public with sharing class RelationshipGraphController {
         Boolean hidePassive,
         Integer minInteractions,
         Integer thresholdDays,
-        Boolean showExternalContacts
+        Boolean showExternalContacts,
+        Boolean showHierarchy
     ) {
         if (accountId == null) {
             AuraHandledException ex = new AuraHandledException('Account ID is required');
@@ -121,11 +125,12 @@ public with sharing class RelationshipGraphController {
             (showExternalContacts == true) ? bundle : null;
         GraphDataService service = new GraphDataService();
         GraphDataService.GraphData graphData = service.buildGraphData(
-            accountId, hidePassive, minInteractions, thresholdDays, externalBundle
+            accountId, hidePassive, minInteractions, thresholdDays,
+            externalBundle, showHierarchy, config
         );
 
         // Update cache
-        String cacheKey = buildCacheKey(accountId, hidePassive, minInteractions, showExternalContacts);
+        String cacheKey = buildCacheKey(accountId, hidePassive, minInteractions, showExternalContacts, showHierarchy);
         cacheGraphData(cacheKey, graphData);
 
         return graphData;
@@ -297,6 +302,13 @@ public with sharing class RelationshipGraphController {
             result.put('minInteractions', config.Min_Interactions__c);
             result.put('timeDecayFactor', config.Time_Decay_Factor__c);
             result.put('cacheTTLMinutes', config.Cache_TTL_Minutes__c);
+            result.put('showAccountHierarchy', config.Show_Account_Hierarchy__c);
+            result.put('contactMovedFlagField', config.Contact_Moved_Flag_Field__c);
+            result.put('contactPreviousCompanyField', config.Contact_Previous_Company_Field__c);
+            result.put('contactMovedInfoField', config.Contact_Moved_Info_Field__c);
+            result.put('parentAccountField', config.Parent_Account_Field__c);
+            result.put('ultimateParentField', config.Ultimate_Parent_Field__c);
+            result.put('hierarchyContactLimit', config.Hierarchy_Contact_Limit__c);
         } else {
             // Defaults
             result.put('classificationProvider', 'EinsteinClassificationProvider');
@@ -304,6 +316,13 @@ public with sharing class RelationshipGraphController {
             result.put('minInteractions', 3);
             result.put('timeDecayFactor', 0.95);
             result.put('cacheTTLMinutes', 60);
+            result.put('showAccountHierarchy', false);
+            result.put('contactMovedFlagField', null);
+            result.put('contactPreviousCompanyField', null);
+            result.put('contactMovedInfoField', null);
+            result.put('parentAccountField', 'ParentId');
+            result.put('ultimateParentField', null);
+            result.put('hierarchyContactLimit', 10);
         }
 
         // Add available classifications for UI
@@ -318,7 +337,11 @@ public with sharing class RelationshipGraphController {
         if (!configLoaded) {
             List<Relationship_Graph_Config__mdt> configs = [
                 SELECT Classification_Provider__c, Activity_Threshold_Days__c,
-                       Min_Interactions__c, Time_Decay_Factor__c, Cache_TTL_Minutes__c
+                       Min_Interactions__c, Time_Decay_Factor__c, Cache_TTL_Minutes__c,
+                       Contact_Moved_Flag_Field__c, Contact_Previous_Company_Field__c,
+                       Contact_Moved_Info_Field__c, Show_Account_Hierarchy__c,
+                       Parent_Account_Field__c, Ultimate_Parent_Field__c,
+                       Hierarchy_Contact_Limit__c
                 FROM Relationship_Graph_Config__mdt
                 WHERE DeveloperName = 'Default'
                 LIMIT 1
@@ -348,11 +371,12 @@ public with sharing class RelationshipGraphController {
         return count;
     }
 
-    private static String buildCacheKey(Id accountId, Boolean hidePassive, Integer minInteractions, Boolean showExternalContacts) {
+    private static String buildCacheKey(Id accountId, Boolean hidePassive, Integer minInteractions, Boolean showExternalContacts, Boolean showHierarchy) {
         return 'graph_' + String.valueOf(accountId).left(15)
             + '_' + (hidePassive ? '1' : '0')
             + '_' + minInteractions
-            + (showExternalContacts == true ? '_ext' : '');
+            + (showExternalContacts == true ? '_ext' : '')
+            + (showHierarchy == true ? '_hier' : '');
     }
 
     private static GraphDataService.GraphData getCachedGraphData(String cacheKey) {

@@ -29,6 +29,18 @@ public with sharing class GraphDataService {
         Integer thresholdDays,
         InteractionDataService.InteractionBundle externalBundle
     ) {
+        return buildGraphData(accountId, hidePassive, minInteractions, thresholdDays, externalBundle, false, null);
+    }
+
+    public GraphData buildGraphData(
+        Id accountId,
+        Boolean hidePassive,
+        Integer minInteractions,
+        Integer thresholdDays,
+        InteractionDataService.InteractionBundle externalBundle,
+        Boolean showHierarchy,
+        Relationship_Graph_Config__mdt config
+    ) {
         GraphData graph = new GraphData();
 
         // 1. Get account info
@@ -46,14 +58,8 @@ public with sharing class GraphDataService {
         ));
 
         // 2. Get contacts and their classifications
-        // Query LIMIT+1 to detect truncation
-        List<Contact> contacts = [
-            SELECT Id, Name, Title, Email, AccountId
-            FROM Contact
-            WHERE AccountId = :accountId
-            WITH SECURITY_ENFORCED
-            LIMIT 501
-        ];
+        // Use dynamic SOQL when moved-contact fields are configured
+        List<Contact> contacts = queryContacts(accountId, config);
 
         if (contacts.size() > 500) {
             graph.isTruncated = true;
@@ -99,6 +105,10 @@ public with sharing class GraphDataService {
             GraphNode node = graph.nodes[graph.nodes.size() - 1];
             node.confidence = confidence;
             node.email = c.Email;
+
+            // Populate moved-contact fields from dynamic query
+            populateMovedFields(node, c, config);
+
             if (rs != null) {
                 if (rs.Strength_Reason__c != null) {
                     node.strengthReason = rs.Strength_Reason__c;
@@ -118,6 +128,9 @@ public with sharing class GraphDataService {
 
             includedContactIds.add(c.Id);
         }
+
+        // 4.5 Resolve previousCompany names to Account IDs
+        resolveMovedCompanyIds(graph);
 
         // 5. Build contact-to-account edges
         for (Id contactId : includedContactIds) {
@@ -165,6 +178,11 @@ public with sharing class GraphDataService {
         // 7.5 Add external contact nodes if bundle provided
         if (externalBundle != null && !externalBundle.externalContactSummaries.isEmpty()) {
             addExternalContactNodes(externalBundle, includedContactIds, graph);
+        }
+
+        // 7.6 Add account hierarchy if enabled
+        if (showHierarchy == true) {
+            addAccountHierarchy(accountId, graph, config);
         }
 
         // 8. Detect relationship risks
@@ -326,6 +344,208 @@ public with sharing class GraphDataService {
         }
     }
 
+    // ─── Contact Query with Dynamic Moved Fields ───────────────────
+
+    @TestVisible
+    private List<Contact> queryContacts(Id accountId, Relationship_Graph_Config__mdt config) {
+        // Build dynamic SOQL to include configured moved fields
+        String baseFields = 'Id, Name, Title, Email, AccountId';
+        Set<String> extraFields = new Set<String>();
+
+        if (config != null) {
+            if (String.isNotBlank(config.Contact_Moved_Flag_Field__c)) {
+                extraFields.add(config.Contact_Moved_Flag_Field__c.trim());
+            }
+            if (String.isNotBlank(config.Contact_Previous_Company_Field__c)) {
+                extraFields.add(config.Contact_Previous_Company_Field__c.trim());
+            }
+            if (String.isNotBlank(config.Contact_Moved_Info_Field__c)) {
+                extraFields.add(config.Contact_Moved_Info_Field__c.trim());
+            }
+        }
+
+        // Try dynamic query with extra fields — use stripInaccessible so
+        // individual FLS failures don't kill the whole query
+        if (!extraFields.isEmpty()) {
+            String fieldList = baseFields + ', ' + String.join(new List<String>(extraFields), ', ');
+            String soql = 'SELECT ' + fieldList
+                + ' FROM Contact WHERE AccountId = :accountId'
+                + ' LIMIT 501';
+            try {
+                List<Contact> raw = Database.query(soql);
+                SObjectAccessDecision decision = Security.stripInaccessible(
+                    AccessType.READABLE, raw
+                );
+                // Log any stripped fields
+                Map<String, Set<String>> removed = decision.getRemovedFields();
+                if (removed.containsKey('Contact')) {
+                    for (String field : removed.get('Contact')) {
+                        System.debug(LoggingLevel.WARN, 'FLS stripped field: ' + field);
+                    }
+                }
+                return (List<Contact>) decision.getRecords();
+            } catch (Exception e) {
+                // Field doesn't exist at all — fall back to static query
+                System.debug(LoggingLevel.WARN, 'Dynamic contact query failed, using fallback: ' + e.getMessage());
+            }
+        }
+
+        // Fallback: static query without moved fields
+        return [
+            SELECT Id, Name, Title, Email, AccountId
+            FROM Contact
+            WHERE AccountId = :accountId
+            WITH SECURITY_ENFORCED
+            LIMIT 501
+        ];
+    }
+
+    private void populateMovedFields(GraphNode node, Contact c, Relationship_Graph_Config__mdt config) {
+        if (config == null) return;
+
+        // Check moved flag
+        if (String.isNotBlank(config.Contact_Moved_Flag_Field__c)) {
+            Object flagVal = getFieldValue(c, config.Contact_Moved_Flag_Field__c.trim());
+            if (flagVal instanceof Boolean) {
+                node.hasMovedCompany = (Boolean) flagVal;
+            } else if (flagVal != null) {
+                // Treat any truthy string as moved
+                String strVal = String.valueOf(flagVal).toLowerCase();
+                node.hasMovedCompany = strVal == 'true' || strVal == 'yes' || strVal == '1';
+            }
+        }
+
+        // Previous company
+        if (String.isNotBlank(config.Contact_Previous_Company_Field__c)) {
+            Object prevVal = getFieldValue(c, config.Contact_Previous_Company_Field__c.trim());
+            if (prevVal != null) {
+                node.previousCompany = String.valueOf(prevVal);
+            }
+        }
+
+        // Move info
+        if (String.isNotBlank(config.Contact_Moved_Info_Field__c)) {
+            Object infoVal = getFieldValue(c, config.Contact_Moved_Info_Field__c.trim());
+            if (infoVal != null) {
+                node.movedInfo = String.valueOf(infoVal);
+            }
+        }
+    }
+
+    @TestVisible
+    private void resolveMovedCompanyIds(GraphData graph) {
+        Set<String> companyNames = new Set<String>();
+        for (GraphNode node : graph.nodes) {
+            if (node.hasMovedCompany == true && String.isNotBlank(node.previousCompany)) {
+                companyNames.add(node.previousCompany);
+            }
+        }
+        if (companyNames.isEmpty()) return;
+
+        Map<String, Id> nameToId = new Map<String, Id>();
+        for (Account a : [
+            SELECT Id, Name FROM Account WHERE Name IN :companyNames WITH SECURITY_ENFORCED
+        ]) {
+            nameToId.put(a.Name, a.Id);
+        }
+
+        for (GraphNode node : graph.nodes) {
+            if (node.hasMovedCompany == true && String.isNotBlank(node.previousCompany)) {
+                Id acctId = nameToId.get(node.previousCompany);
+                if (acctId != null) {
+                    node.previousCompanyId = String.valueOf(acctId);
+                }
+            }
+        }
+    }
+
+    @TestVisible
+    private Object getFieldValue(SObject record, String fieldName) {
+        try {
+            return record.get(fieldName);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    // ─── Account Hierarchy ───────────────────────────────────────────
+
+    @TestVisible
+    private void addAccountHierarchy(Id accountId, GraphData graph, Relationship_Graph_Config__mdt config) {
+        // Determine parent field (default to ParentId)
+        String parentField = 'ParentId';
+        if (config != null && String.isNotBlank(config.Parent_Account_Field__c)) {
+            parentField = config.Parent_Account_Field__c.trim();
+        }
+
+        // Mark the current account node
+        for (GraphNode node : graph.nodes) {
+            if (node.nodeType == 'Account' && node.id == String.valueOf(accountId)) {
+                node.hierarchyLevel = 'current';
+                break;
+            }
+        }
+
+        // Query parent account
+        try {
+            String parentSoql = 'SELECT ' + String.escapeSingleQuotes(parentField)
+                + ' FROM Account WHERE Id = :accountId WITH SECURITY_ENFORCED LIMIT 1';
+            List<SObject> parentResults = Database.query(parentSoql);
+            if (!parentResults.isEmpty()) {
+                Object parentIdVal = parentResults[0].get(parentField);
+                if (parentIdVal != null) {
+                    Id parentAccountId = Id.valueOf(String.valueOf(parentIdVal));
+                    List<Account> parentAccounts = [
+                        SELECT Id, Name, Industry
+                        FROM Account
+                        WHERE Id = :parentAccountId
+                        WITH SECURITY_ENFORCED
+                        LIMIT 1
+                    ];
+                    if (!parentAccounts.isEmpty()) {
+                        Account parent = parentAccounts[0];
+                        GraphNode parentNode = new GraphNode(
+                            parent.Id, parent.Name, 'Account', null, null, 0, 0
+                        );
+                        parentNode.hierarchyLevel = 'parent';
+                        parentNode.isHierarchyAccount = true;
+                        graph.nodes.add(parentNode);
+
+                        // Edge: current → parent
+                        graph.edges.add(new GraphEdge(
+                            accountId, parent.Id, 0.8, 0, 'hierarchy'
+                        ));
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'Hierarchy parent query failed: ' + e.getMessage());
+        }
+
+        // Query child accounts
+        try {
+            String childSoql = 'SELECT Id, Name, Industry FROM Account WHERE '
+                + String.escapeSingleQuotes(parentField) + ' = :accountId'
+                + ' WITH SECURITY_ENFORCED LIMIT 20';
+            List<Account> children = Database.query(childSoql);
+            for (Account child : children) {
+                GraphNode childNode = new GraphNode(
+                    child.Id, child.Name, 'Account', null, null, 0, 0
+                );
+                childNode.hierarchyLevel = 'child';
+                childNode.isHierarchyAccount = true;
+                graph.nodes.add(childNode);
+
+                // Edge: current → child
+                graph.edges.add(new GraphEdge(
+                    accountId, child.Id, 0.6, 0, 'hierarchy'
+                ));
+            }
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'Hierarchy children query failed: ' + e.getMessage());
+        }
+    }
+
     // ─── Inner Classes (serialized to JSON for LWC) ─────────────────
 
     public class GraphData {
@@ -334,6 +554,7 @@ public with sharing class GraphDataService {
         @AuraEnabled public Boolean isTruncated { get; set; }
         @AuraEnabled public Integer totalContactCount { get; set; }
         @AuraEnabled public List<RiskAlert> riskAlerts { get; set; }
+        @AuraEnabled public List<String> warnings { get; set; }
 
         public GraphData() {
             this.nodes = new List<GraphNode>();
@@ -341,6 +562,7 @@ public with sharing class GraphDataService {
             this.isTruncated = false;
             this.totalContactCount = 0;
             this.riskAlerts = new List<RiskAlert>();
+            this.warnings = new List<String>();
         }
     }
 
@@ -362,6 +584,12 @@ public with sharing class GraphDataService {
         @AuraEnabled public List<RelationshipStrengthCalculator.FactorBreakdown> strengthFactors { get; set; }
         @AuraEnabled public String accountName { get; set; }        // For External_Contact nodes
         @AuraEnabled public String accountId { get; set; }          // For External_Contact nodes
+        @AuraEnabled public Boolean hasMovedCompany { get; set; }   // Contact has left company
+        @AuraEnabled public String previousCompany { get; set; }    // Where they moved to
+        @AuraEnabled public String previousCompanyId { get; set; }  // Account Id of previous company
+        @AuraEnabled public String movedInfo { get; set; }          // Additional move info
+        @AuraEnabled public String hierarchyLevel { get; set; }     // 'parent', 'current', 'child'
+        @AuraEnabled public Boolean isHierarchyAccount { get; set; } // True for parent/child accounts
 
         public GraphNode(
             Id recordId, String name, String nodeType, String classification,
@@ -520,6 +748,24 @@ public with sharing class GraphDataService {
                     alert.contactId = node.id;
                     alert.contactName = node.name;
                     graph.riskAlerts.add(alert);
+                }
+            }
+        }
+
+        // R7: Key contact left company
+        for (String cls : new List<String>{ 'Champion', 'Economic Buyer', 'Technical Buyer' }) {
+            if (byClassification.containsKey(cls)) {
+                for (GraphNode node : byClassification.get(cls)) {
+                    if (node.hasMovedCompany == true) {
+                        String msg = node.name + ' (' + cls + ') has left the company';
+                        if (String.isNotBlank(node.previousCompany)) {
+                            msg += ' (moved to ' + node.previousCompany + ')';
+                        }
+                        RiskAlert alert = new RiskAlert('high', 'contact_left_company', msg);
+                        alert.contactId = node.id;
+                        alert.contactName = node.name;
+                        graph.riskAlerts.add(alert);
+                    }
                 }
             }
         }

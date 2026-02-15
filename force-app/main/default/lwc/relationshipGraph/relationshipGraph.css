@@ -88,6 +88,20 @@ canvas {
     font-style: italic;
 }
 
+/* ─── Moved Contact ────────────────────────────────────────────── */
+.moved-badge {
+    --sds-c-badge-color-background: #c62828;
+    --sds-c-badge-text-color: #fff;
+}
+
+.moved-warning {
+    padding: 8px;
+    margin-bottom: 12px;
+    background: #fff3cd;
+    border-left: 3px solid #ffc107;
+    border-radius: 0 4px 4px 0;
+}
+
 /* ─── Detail Panel ───────────────────────────────────────────────── */
 .detail-panel {
     position: absolute;

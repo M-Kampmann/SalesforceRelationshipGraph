@@ -21,7 +21,7 @@ private class RelationshipGraphControllerTest {
 
         Test.startTest();
         GraphDataService.GraphData result = RelationshipGraphController.getGraphData(
-            acct.Id, false, 0, 90, null
+            acct.Id, false, 0, 90, null, null
         );
         Test.stopTest();
 
@@ -36,7 +36,7 @@ private class RelationshipGraphControllerTest {
     static void testGetGraphDataNullId() {
         Test.startTest();
         try {
-            RelationshipGraphController.getGraphData(null, false, 0, 90, null);
+            RelationshipGraphController.getGraphData(null, false, 0, 90, null, null);
             System.assert(false, 'Should have thrown AuraHandledException');
         } catch (AuraHandledException e) {
             System.assert(e.getMessage().contains('Account ID is required'));
@@ -51,7 +51,7 @@ private class RelationshipGraphControllerTest {
         Test.startTest();
         // With very tight threshold (1 day), contacts with recent data should appear
         GraphDataService.GraphData result = RelationshipGraphController.getGraphData(
-            acct.Id, false, 0, 1, null
+            acct.Id, false, 0, 1, null, null
         );
         Test.stopTest();
 
@@ -240,7 +240,7 @@ private class RelationshipGraphControllerTest {
 
         Test.startTest();
         GraphDataService.GraphData result = RelationshipGraphController.refreshGraphData(
-            acct.Id, false, 0, 90, null
+            acct.Id, false, 0, 90, null, null
         );
         Test.stopTest();
 
@@ -252,7 +252,7 @@ private class RelationshipGraphControllerTest {
     static void testRefreshGraphDataNullId() {
         Test.startTest();
         try {
-            RelationshipGraphController.refreshGraphData(null, false, 0, 90, null);
+            RelationshipGraphController.refreshGraphData(null, false, 0, 90, null, null);
             System.assert(false, 'Should have thrown AuraHandledException');
         } catch (AuraHandledException e) {
             System.assert(e.getMessage().contains('Account ID is required'));
@@ -268,7 +268,7 @@ private class RelationshipGraphControllerTest {
 
         Test.startTest();
         GraphDataService.GraphData result = RelationshipGraphController.getGraphData(
-            acct.Id, false, 0, 90, true
+            acct.Id, false, 0, 90, true, null
         );
         Test.stopTest();
 
@@ -282,7 +282,7 @@ private class RelationshipGraphControllerTest {
 
         Test.startTest();
         GraphDataService.GraphData result = RelationshipGraphController.refreshGraphData(
-            acct.Id, false, 0, 90, true
+            acct.Id, false, 0, 90, true, null
         );
         Test.stopTest();
 
@@ -297,10 +297,10 @@ private class RelationshipGraphControllerTest {
         Test.startTest();
         // null showExternalContacts should behave identically to false
         GraphDataService.GraphData resultNull = RelationshipGraphController.getGraphData(
-            acct.Id, false, 0, 90, null
+            acct.Id, false, 0, 90, null, null
         );
         GraphDataService.GraphData resultFalse = RelationshipGraphController.getGraphData(
-            acct.Id, false, 0, 90, false
+            acct.Id, false, 0, 90, false, null
         );
         Test.stopTest();
 
@@ -318,7 +318,7 @@ private class RelationshipGraphControllerTest {
         delete [SELECT Id FROM Relationship_Strength__c WHERE Account__c = :acct.Id];
 
         Test.startTest();
-        RelationshipGraphController.refreshGraphData(acct.Id, false, 0, 90, null);
+        RelationshipGraphController.refreshGraphData(acct.Id, false, 0, 90, null, null);
         Test.stopTest();
 
         Integer strengthCount = [
@@ -327,5 +327,53 @@ private class RelationshipGraphControllerTest {
         ];
         System.assert(strengthCount > 0,
             'Refresh should create strength records');
+    }
+
+    // ─── Account Hierarchy + Moved Contact ──────────────────────────
+
+    @IsTest
+    static void testGetGraphConfigIncludesNewFields() {
+        Map<String, Object> config = RelationshipGraphController.getGraphConfig();
+
+        System.assert(config.containsKey('showAccountHierarchy'),
+            'Config should include showAccountHierarchy');
+        System.assert(config.containsKey('contactMovedFlagField'),
+            'Config should include contactMovedFlagField');
+        System.assert(config.containsKey('parentAccountField'),
+            'Config should include parentAccountField');
+        System.assert(config.containsKey('hierarchyContactLimit'),
+            'Config should include hierarchyContactLimit');
+    }
+
+    @IsTest
+    static void testGetGraphDataWithHierarchy() {
+        Account acct = [SELECT Id FROM Account LIMIT 1];
+
+        Test.startTest();
+        GraphDataService.GraphData result = RelationshipGraphController.getGraphData(
+            acct.Id, false, 0, 90, null, true
+        );
+        Test.stopTest();
+
+        System.assertNotEquals(null, result, 'Should return graph data with hierarchy flag');
+        System.assert(result.nodes.size() > 0, 'Should have nodes');
+    }
+
+    @IsTest
+    static void testGetGraphDataBackwardCompatSixthParam() {
+        Account acct = [SELECT Id FROM Account LIMIT 1];
+
+        Test.startTest();
+        // null showHierarchy should behave identically to false
+        GraphDataService.GraphData resultNull = RelationshipGraphController.getGraphData(
+            acct.Id, false, 0, 90, null, null
+        );
+        GraphDataService.GraphData resultFalse = RelationshipGraphController.getGraphData(
+            acct.Id, false, 0, 90, null, false
+        );
+        Test.stopTest();
+
+        System.assertEquals(resultNull.nodes.size(), resultFalse.nodes.size(),
+            'null and false showHierarchy should produce same node count');
     }
 }

@@ -22,4 +22,32 @@
         <field>Cache_TTL_Minutes__c</field>
         <value xsi:type="xsd:double">60.0</value>
     </values>
+    <values>
+        <field>Contact_Moved_Flag_Field__c</field>
+        <value xsi:type="xsd:string">No_Longer_at_Company__c</value>
+    </values>
+    <values>
+        <field>Contact_Previous_Company_Field__c</field>
+        <value xsi:type="xsd:string">Previous_Company_Text_c__c</value>
+    </values>
+    <values>
+        <field>Contact_Moved_Info_Field__c</field>
+        <value xsi:type="xsd:string">Person_has_moved__c</value>
+    </values>
+    <values>
+        <field>Show_Account_Hierarchy__c</field>
+        <value xsi:type="xsd:boolean">false</value>
+    </values>
+    <values>
+        <field>Parent_Account_Field__c</field>
+        <value xsi:type="xsd:string">ParentId</value>
+    </values>
+    <values>
+        <field>Ultimate_Parent_Field__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>Hierarchy_Contact_Limit__c</field>
+        <value xsi:type="xsd:double">10.0</value>
+    </values>
 </CustomMetadata>

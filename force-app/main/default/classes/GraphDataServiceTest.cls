@@ -783,4 +783,318 @@ private class GraphDataServiceTest {
         System.assertEquals('Email Sent', contactNode.strengthFactors[0].name);
         System.assertEquals(10.0, contactNode.strengthFactors[0].contribution);
     }
+
+    // ─── Moved Contact Detection ────────────────────────────────────
+
+    @IsTest
+    static void testMovedContactDetected() {
+        Account acct = [SELECT Id FROM Account WHERE Name = 'Test Corp' LIMIT 1];
+
+        // Without config, no moved contacts should be set
+        GraphDataService service = new GraphDataService();
+
+        Test.startTest();
+        GraphDataService.GraphData graph = service.buildGraphData(
+            acct.Id, false, 0, 90, null, false, null
+        );
+        Test.stopTest();
+
+        for (GraphDataService.GraphNode node : graph.nodes) {
+            if (node.nodeType == 'Contact') {
+                System.assertEquals(null, node.hasMovedCompany,
+                    'Without config, hasMovedCompany should be null');
+            }
+        }
+    }
+
+    @IsTest
+    static void testMovedContactEndToEnd() {
+        Account acct = [SELECT Id FROM Account WHERE Name = 'Test Corp' LIMIT 1];
+
+        // Set first contact as "moved"
+        Contact movedContact = [SELECT Id FROM Contact WHERE AccountId = :acct.Id ORDER BY CreatedDate LIMIT 1];
+        movedContact.No_Longer_at_Company__c = true;
+        movedContact.Previous_Company_Text_c__c = 'Rival Corp';
+        movedContact.Person_has_moved__c = 'Joined as CTO';
+        update movedContact;
+
+        // Fetch the real Custom Metadata config (deployed with the package)
+        Relationship_Graph_Config__mdt config = [
+            SELECT Contact_Moved_Flag_Field__c, Contact_Previous_Company_Field__c,
+                   Contact_Moved_Info_Field__c, Parent_Account_Field__c,
+                   Show_Account_Hierarchy__c, Min_Interactions__c,
+                   Hierarchy_Contact_Limit__c
+            FROM Relationship_Graph_Config__mdt
+            WHERE DeveloperName = 'Default'
+            LIMIT 1
+        ];
+
+        GraphDataService service = new GraphDataService();
+
+        Test.startTest();
+        GraphDataService.GraphData graph = service.buildGraphData(
+            acct.Id, false, 0, 90, null, false, config
+        );
+        Test.stopTest();
+
+        // Verify the moved contact node has hasMovedCompany = true
+        GraphDataService.GraphNode movedNode = null;
+        for (GraphDataService.GraphNode node : graph.nodes) {
+            if (node.id == String.valueOf(movedContact.Id)) {
+                movedNode = node;
+                break;
+            }
+        }
+        System.assertNotEquals(null, movedNode, 'Should find the moved contact node');
+        System.assertEquals(true, movedNode.hasMovedCompany, 'hasMovedCompany should be true');
+        System.assertEquals('Rival Corp', movedNode.previousCompany, 'previousCompany should match');
+        System.assertEquals('Joined as CTO', movedNode.movedInfo, 'movedInfo should match');
+        // No Account named 'Rival Corp' exists — previousCompanyId should be null
+        System.assertEquals(null, movedNode.previousCompanyId, 'previousCompanyId should be null when no matching Account');
+    }
+
+    @IsTest
+    static void testMovedContactResolvesCompanyId() {
+        Account acct = [SELECT Id FROM Account WHERE Name = 'Test Corp' LIMIT 1];
+
+        // Create the target company Account
+        Account rivalAcct = RelationshipGraphTestDataFactory.createAccount('Rival Corp');
+
+        // Set first contact as "moved" to Rival Corp
+        Contact movedContact = [SELECT Id FROM Contact WHERE AccountId = :acct.Id ORDER BY CreatedDate LIMIT 1];
+        movedContact.No_Longer_at_Company__c = true;
+        movedContact.Previous_Company_Text_c__c = 'Rival Corp';
+        update movedContact;
+
+        Relationship_Graph_Config__mdt config = [
+            SELECT Contact_Moved_Flag_Field__c, Contact_Previous_Company_Field__c,
+                   Contact_Moved_Info_Field__c, Parent_Account_Field__c,
+                   Show_Account_Hierarchy__c, Min_Interactions__c,
+                   Hierarchy_Contact_Limit__c
+            FROM Relationship_Graph_Config__mdt
+            WHERE DeveloperName = 'Default'
+            LIMIT 1
+        ];
+
+        GraphDataService service = new GraphDataService();
+
+        Test.startTest();
+        GraphDataService.GraphData graph = service.buildGraphData(
+            acct.Id, false, 0, 90, null, false, config
+        );
+        Test.stopTest();
+
+        GraphDataService.GraphNode movedNode = null;
+        for (GraphDataService.GraphNode node : graph.nodes) {
+            if (node.id == String.valueOf(movedContact.Id)) {
+                movedNode = node;
+                break;
+            }
+        }
+        System.assertNotEquals(null, movedNode, 'Should find the moved contact node');
+        System.assertEquals(true, movedNode.hasMovedCompany, 'hasMovedCompany should be true');
+        System.assertEquals('Rival Corp', movedNode.previousCompany, 'previousCompany should match');
+        System.assertEquals(String.valueOf(rivalAcct.Id), movedNode.previousCompanyId,
+            'previousCompanyId should be resolved to the Rival Corp Account Id');
+    }
+
+    @IsTest
+    static void testMovedContactPreviousCompany() {
+        // Test the getFieldValue helper works correctly
+        Account acct = [SELECT Id, Name, Industry FROM Account WHERE Name = 'Test Corp' LIMIT 1];
+
+        GraphDataService service = new GraphDataService();
+        Object nameVal = service.getFieldValue(acct, 'Name');
+        Object industryVal = service.getFieldValue(acct, 'Industry');
+        Object badField = service.getFieldValue(acct, 'NonExistent__c');
+
+        System.assertEquals('Test Corp', nameVal, 'Should return field value');
+        System.assertEquals('Technology', industryVal, 'Should return industry');
+        System.assertEquals(null, badField, 'Invalid field should return null');
+    }
+
+    @IsTest
+    static void testMovedChampionRiskAlert() {
+        Account acct = [SELECT Id FROM Account WHERE Name = 'Test Corp' LIMIT 1];
+
+        // Build a graph and manually set a champion as moved to test R7
+        GraphDataService service = new GraphDataService();
+        GraphDataService.GraphData graph = service.buildGraphData(
+            acct.Id, false, 0, 90
+        );
+
+        // Simulate a moved champion by modifying node data before re-running risk detection
+        for (GraphDataService.GraphNode node : graph.nodes) {
+            if (node.classification == 'Champion' && node.nodeType == 'Contact') {
+                node.hasMovedCompany = true;
+                node.previousCompany = 'New Corp';
+                break;
+            }
+        }
+
+        // Clear existing risks and re-detect
+        graph.riskAlerts.clear();
+
+        Test.startTest();
+        service.detectRisks(graph);
+        Test.stopTest();
+
+        Boolean hasMovedRisk = false;
+        for (GraphDataService.RiskAlert alert : graph.riskAlerts) {
+            if (alert.riskType == 'contact_left_company') {
+                hasMovedRisk = true;
+                System.assertEquals('high', alert.severity);
+                System.assert(alert.message.contains('New Corp'),
+                    'Message should include previous company');
+                break;
+            }
+        }
+        System.assert(hasMovedRisk, 'Should detect moved champion risk');
+    }
+
+    // ─── Account Hierarchy ──────────────────────────────────────────
+
+    @IsTest
+    static void testAccountHierarchyParentAndChildren() {
+        Account parent = RelationshipGraphTestDataFactory.createAccount('Parent Corp');
+        Account current = [SELECT Id FROM Account WHERE Name = 'Test Corp' LIMIT 1];
+        current.ParentId = parent.Id;
+        update current;
+
+        Account child1 = new Account(Name = 'Child One', ParentId = current.Id, Industry = 'Technology');
+        Account child2 = new Account(Name = 'Child Two', ParentId = current.Id, Industry = 'Technology');
+        insert new List<Account>{ child1, child2 };
+
+        GraphDataService service = new GraphDataService();
+
+        Test.startTest();
+        GraphDataService.GraphData graph = service.buildGraphData(
+            current.Id, false, 0, 90, null, true, null
+        );
+        Test.stopTest();
+
+        // Count hierarchy nodes and edges
+        Integer hierarchyNodes = 0;
+        Integer hierarchyEdges = 0;
+        Boolean hasParent = false;
+        Boolean hasChild = false;
+
+        for (GraphDataService.GraphNode node : graph.nodes) {
+            if (node.isHierarchyAccount == true) {
+                hierarchyNodes++;
+                if (node.hierarchyLevel == 'parent') hasParent = true;
+                if (node.hierarchyLevel == 'child') hasChild = true;
+            }
+        }
+        for (GraphDataService.GraphEdge edge : graph.edges) {
+            if (edge.edgeType == 'hierarchy') hierarchyEdges++;
+        }
+
+        System.assertEquals(3, hierarchyNodes, 'Should have 1 parent + 2 children');
+        System.assert(hasParent, 'Should have a parent node');
+        System.assert(hasChild, 'Should have child nodes');
+        System.assertEquals(3, hierarchyEdges,
+            'Should have 3 hierarchy edges (1 to parent + 2 to children)');
+    }
+
+    @IsTest
+    static void testHierarchyChildCappedAt20() {
+        Account current = [SELECT Id FROM Account WHERE Name = 'Test Corp' LIMIT 1];
+
+        // Create 25 child accounts
+        List<Account> children = new List<Account>();
+        for (Integer i = 0; i < 25; i++) {
+            children.add(new Account(
+                Name = 'Child Account ' + i,
+                ParentId = current.Id,
+                Industry = 'Technology'
+            ));
+        }
+        insert children;
+
+        GraphDataService service = new GraphDataService();
+
+        Test.startTest();
+        GraphDataService.GraphData graph = service.buildGraphData(
+            current.Id, false, 0, 90, null, true, null
+        );
+        Test.stopTest();
+
+        Integer childNodes = 0;
+        for (GraphDataService.GraphNode node : graph.nodes) {
+            if (node.isHierarchyAccount == true && node.hierarchyLevel == 'child') {
+                childNodes++;
+            }
+        }
+        System.assert(childNodes <= 20,
+            'Hierarchy children should be capped at 20, got: ' + childNodes);
+    }
+
+    @IsTest
+    static void testGracefulDegradationMissingFields() {
+        Account acct = [SELECT Id FROM Account WHERE Name = 'Test Corp' LIMIT 1];
+
+        // Create a config-like scenario with bad field names
+        // The queryContacts method should fall back to static SOQL
+        GraphDataService service = new GraphDataService();
+
+        Test.startTest();
+        // 7-param version with null config — should work fine
+        GraphDataService.GraphData graph = service.buildGraphData(
+            acct.Id, false, 0, 90, null, false, null
+        );
+        Test.stopTest();
+
+        System.assertNotEquals(null, graph, 'Should return graph data even without config');
+        System.assert(graph.nodes.size() > 0, 'Should have nodes');
+    }
+
+    @IsTest
+    static void testQueryContactsStripInaccessible() {
+        Account acct = [SELECT Id FROM Account WHERE Name = 'Test Corp' LIMIT 1];
+
+        // Set data on a contact so we can verify fields come through
+        Contact c = [SELECT Id FROM Contact WHERE AccountId = :acct.Id LIMIT 1];
+        c.No_Longer_at_Company__c = true;
+        c.Previous_Company_Text_c__c = 'StripTest Corp';
+        update c;
+
+        Relationship_Graph_Config__mdt config = [
+            SELECT Contact_Moved_Flag_Field__c, Contact_Previous_Company_Field__c,
+                   Contact_Moved_Info_Field__c
+            FROM Relationship_Graph_Config__mdt
+            WHERE DeveloperName = 'Default'
+            LIMIT 1
+        ];
+
+        GraphDataService service = new GraphDataService();
+
+        Test.startTest();
+        List<Contact> contacts = service.queryContacts(acct.Id, config);
+        Test.stopTest();
+
+        System.assert(contacts.size() > 0, 'Should return contacts via stripInaccessible');
+
+        // Verify the moved fields are accessible on the returned records
+        Contact movedContact = null;
+        for (Contact ct : contacts) {
+            if (ct.Id == c.Id) {
+                movedContact = ct;
+                break;
+            }
+        }
+        System.assertNotEquals(null, movedContact, 'Should find the updated contact');
+        System.assertEquals(true, movedContact.get('No_Longer_at_Company__c'),
+            'Moved flag should be accessible via stripInaccessible');
+        System.assertEquals('StripTest Corp', movedContact.get('Previous_Company_Text_c__c'),
+            'Previous company should be accessible via stripInaccessible');
+    }
+
+    @IsTest
+    static void testGraphDataWarningsDefault() {
+        // Verify the new warnings list is initialized empty
+        GraphDataService.GraphData graph = new GraphDataService.GraphData();
+        System.assertNotEquals(null, graph.warnings, 'Warnings should be initialized');
+        System.assertEquals(0, graph.warnings.size(), 'Warnings should be empty by default');
+    }
 }

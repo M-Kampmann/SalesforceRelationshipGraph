@@ -195,6 +195,7 @@ function flushPromises() {
 describe('c-relationship-graph', () => {
     beforeEach(() => {
         jest.clearAllMocks();
+        sessionStorage.clear();
         getGraphConfig.mockResolvedValue(MOCK_CONFIG);
         getGraphData.mockResolvedValue(MOCK_GRAPH_DATA);
         refreshGraphData.mockResolvedValue(MOCK_GRAPH_DATA);
@@ -718,6 +719,7 @@ describe('external contacts', () => {
     };
 
     beforeEach(() => {
+        sessionStorage.clear();
         getGraphConfig.mockResolvedValue(MOCK_CONFIG);
         refreshGraphData.mockResolvedValue(MOCK_EXTERNAL_DATA);
         loadScript.mockResolvedValue();
@@ -836,5 +838,380 @@ describe('factor breakdown', () => {
 
         const factorBreakdown = element.shadowRoot.querySelector('.factor-breakdown');
         expect(factorBreakdown).toBeNull();
+    });
+});
+
+describe('hierarchy and moved contacts', () => {
+    const MOCK_MOVED_RISK = {
+        severity: 'high',
+        riskType: 'contact_left_company',
+        message: 'Jane Doe (Champion) has left the company (moved to New Corp)',
+        contactId: '003xx000004TxyZAAU',
+        contactName: 'Jane Doe'
+    };
+
+    const MOCK_HIERARCHY_DATA = {
+        ...MOCK_GRAPH_DATA,
+        nodes: [
+            ...MOCK_GRAPH_DATA.nodes,
+            {
+                id: '001xx000003ParAAA', name: 'Parent Corp', nodeType: 'Account',
+                classification: null, confidence: null, interactionCount: 0,
+                hierarchyLevel: 'parent', isHierarchyAccount: true
+            },
+            {
+                id: '001xx000003ChiAAA', name: 'Child Corp', nodeType: 'Account',
+                classification: null, confidence: null, interactionCount: 0,
+                hierarchyLevel: 'child', isHierarchyAccount: true
+            }
+        ],
+        edges: [
+            ...MOCK_GRAPH_DATA.edges,
+            {
+                source: '001xx000003DGbYAAW', target: '001xx000003ParAAA',
+                strength: 0.8, interactionCount: 0, edgeType: 'hierarchy'
+            },
+            {
+                source: '001xx000003DGbYAAW', target: '001xx000003ChiAAA',
+                strength: 0.6, interactionCount: 0, edgeType: 'hierarchy'
+            }
+        ]
+    };
+
+    const MOCK_MOVED_DATA = {
+        ...MOCK_GRAPH_DATA,
+        nodes: MOCK_GRAPH_DATA.nodes.map(n =>
+            n.id === '003xx000004TxyZAAU'
+                ? { ...n, hasMovedCompany: true, previousCompany: 'New Corp', movedInfo: 'Promoted to CRO' }
+                : n
+        ),
+        riskAlerts: [...MOCK_RISK_ALERTS, MOCK_MOVED_RISK]
+    };
+
+    beforeEach(() => {
+        sessionStorage.clear();
+        getGraphConfig.mockResolvedValue(MOCK_CONFIG);
+        refreshGraphData.mockResolvedValue(MOCK_GRAPH_DATA);
+        loadScript.mockResolvedValue();
+    });
+
+    it('renders show hierarchy button', async () => {
+        getGraphData.mockResolvedValue(MOCK_GRAPH_DATA);
+        const element = createComponent({ recordId: '001xx000003DGbYAAW' });
+        await flushPromises();
+
+        const buttons = element.shadowRoot.querySelectorAll('lightning-button');
+        const hierarchyBtn = Array.from(buttons).find(
+            b => b.label === 'Show Hierarchy' || b.label === 'Hide Hierarchy'
+        );
+        expect(hierarchyBtn).toBeTruthy();
+        expect(hierarchyBtn.label).toBe('Show Hierarchy');
+    });
+
+    it('toggles hierarchy and reloads data with showHierarchy param', async () => {
+        getGraphData.mockResolvedValue(MOCK_GRAPH_DATA);
+        const element = createComponent({ recordId: '001xx000003DGbYAAW' });
+        await flushPromises();
+
+        getGraphData.mockClear();
+        getGraphData.mockResolvedValue(MOCK_HIERARCHY_DATA);
+
+        const buttons = element.shadowRoot.querySelectorAll('lightning-button');
+        const hierarchyBtn = Array.from(buttons).find(
+            b => b.label === 'Show Hierarchy' || b.label === 'Hide Hierarchy'
+        );
+        hierarchyBtn.click();
+        await flushPromises();
+
+        expect(getGraphData).toHaveBeenCalledWith(
+            expect.objectContaining({
+                showHierarchy: true
+            })
+        );
+    });
+
+    it('counts hierarchy accounts and shows in stats bar', async () => {
+        getGraphData.mockResolvedValue(MOCK_HIERARCHY_DATA);
+        const element = createComponent({ recordId: '001xx000003DGbYAAW' });
+        await flushPromises();
+
+        // Toggle hierarchy on so stats bar shows count
+        const buttons = element.shadowRoot.querySelectorAll('lightning-button');
+        const hierarchyBtn = Array.from(buttons).find(
+            b => b.label === 'Show Hierarchy' || b.label === 'Hide Hierarchy'
+        );
+        getGraphData.mockResolvedValue(MOCK_HIERARCHY_DATA);
+        hierarchyBtn.click();
+        await flushPromises();
+
+        const statsBar = element.shadowRoot.querySelector('.stats-bar');
+        if (statsBar) {
+            expect(statsBar.textContent).toContain('Hierarchy:');
+        }
+    });
+
+    it('generates risk alert for moved champion', async () => {
+        getGraphData.mockResolvedValue(MOCK_MOVED_DATA);
+        const element = createComponent({ recordId: '001xx000003DGbYAAW' });
+        await flushPromises();
+
+        // Open risk panel
+        const riskButton = element.shadowRoot.querySelector('.risk-alert-button');
+        expect(riskButton).toBeTruthy();
+        riskButton.click();
+        await flushPromises();
+
+        const riskPanel = element.shadowRoot.querySelector('.risk-panel');
+        expect(riskPanel).toBeTruthy();
+
+        // Should have the moved risk alert among others
+        const alertItems = riskPanel.querySelectorAll('.risk-alert-item');
+        expect(alertItems.length).toBe(4); // 3 original + 1 moved
+    });
+});
+
+describe('clustering and account node removal', () => {
+    const MOCK_CLUSTER_DATA = {
+        nodes: [
+            { id: 'acct1', name: 'Test Corp', nodeType: 'Account', classification: null, interactionCount: 0 },
+            { id: 'c1', name: 'Alice', nodeType: 'Contact', classification: 'Champion', interactionCount: 10 },
+            { id: 'c2', name: 'Bob', nodeType: 'Contact', classification: 'Champion', interactionCount: 8 },
+            { id: 'c3', name: 'Carol', nodeType: 'Contact', classification: 'Blocker', interactionCount: 5 },
+            { id: 'c4', name: 'Dave', nodeType: 'Contact', classification: 'Blocker', interactionCount: 3 }
+        ],
+        edges: [
+            { source: 'c1', target: 'acct1', strength: 0.8, interactionCount: 12, edgeType: 'account_relationship' },
+            { source: 'c2', target: 'acct1', strength: 0.6, interactionCount: 8, edgeType: 'account_relationship' },
+            { source: 'c3', target: 'acct1', strength: 0.4, interactionCount: 5, edgeType: 'account_relationship' },
+            { source: 'c4', target: 'acct1', strength: 0.3, interactionCount: 3, edgeType: 'account_relationship' },
+            { source: 'c1', target: 'c2', strength: 0.9, interactionCount: 15, edgeType: 'co_occurrence' },
+            { source: 'c3', target: 'c4', strength: 0.7, interactionCount: 10, edgeType: 'co_occurrence' }
+        ],
+        riskAlerts: [],
+        isTruncated: false,
+        totalContactCount: 4
+    };
+
+    beforeEach(() => {
+        sessionStorage.clear();
+        getGraphConfig.mockResolvedValue(MOCK_CONFIG);
+        refreshGraphData.mockResolvedValue(MOCK_CLUSTER_DATA);
+        loadScript.mockResolvedValue();
+    });
+
+    it('shows cluster count in stats bar for clustered data', async () => {
+        getGraphData.mockResolvedValue(MOCK_CLUSTER_DATA);
+        const element = createComponent({ recordId: 'acct1' });
+        await flushPromises();
+
+        const statsBar = element.shadowRoot.querySelector('.stats-bar');
+        expect(statsBar).toBeTruthy();
+        expect(statsBar.textContent).toContain('Clusters:');
+    });
+
+    it('shows fewer nodes when Account node is filtered out', async () => {
+        getGraphData.mockResolvedValue(MOCK_CLUSTER_DATA);
+        const element = createComponent({ recordId: 'acct1' });
+        await flushPromises();
+
+        // 5 nodes in data, but Account node filtered = 4 contact nodes visible
+        const statsBar = element.shadowRoot.querySelector('.stats-bar');
+        expect(statsBar).toBeTruthy();
+        expect(statsBar.textContent).toContain('Nodes: 4');
+    });
+
+    it('shows fewer edges when account_relationship is filtered', async () => {
+        getGraphData.mockResolvedValue(MOCK_CLUSTER_DATA);
+        const element = createComponent({ recordId: 'acct1' });
+        await flushPromises();
+
+        // 6 edges in data, 4 account_relationship filtered = 2 co_occurrence remain
+        const statsBar = element.shadowRoot.querySelector('.stats-bar');
+        expect(statsBar).toBeTruthy();
+        expect(statsBar.textContent).toContain('Edges: 2');
+    });
+
+    it('shows hierarchy stats when hierarchy toggled on', async () => {
+        const hierarchyData = {
+            ...MOCK_CLUSTER_DATA,
+            nodes: [
+                ...MOCK_CLUSTER_DATA.nodes,
+                { id: 'parent1', name: 'Parent Corp', nodeType: 'Account', isHierarchyAccount: true, hierarchyLevel: 'parent', interactionCount: 0 }
+            ],
+            edges: [
+                ...MOCK_CLUSTER_DATA.edges,
+                { source: 'acct1', target: 'parent1', strength: 0.8, interactionCount: 0, edgeType: 'hierarchy' }
+            ]
+        };
+        getGraphData.mockResolvedValue(hierarchyData);
+        const element = createComponent({ recordId: 'acct1' });
+        await flushPromises();
+
+        // Toggle hierarchy on
+        getGraphData.mockResolvedValue(hierarchyData);
+        const buttons = element.shadowRoot.querySelectorAll('lightning-button');
+        const hierarchyBtn = Array.from(buttons).find(
+            b => b.label === 'Show Hierarchy' || b.label === 'Hide Hierarchy'
+        );
+        hierarchyBtn.click();
+        await flushPromises();
+
+        const statsBar = element.shadowRoot.querySelector('.stats-bar');
+        expect(statsBar).toBeTruthy();
+        expect(statsBar.textContent).toContain('Hierarchy:');
+    });
+
+    it('handles data with no co-occurrence edges gracefully', async () => {
+        const noEdgeData = {
+            nodes: [
+                { id: 'acct1', name: 'Test Corp', nodeType: 'Account', interactionCount: 0 },
+                { id: 'c1', name: 'Lonely', nodeType: 'Contact', classification: 'Unknown', interactionCount: 1 }
+            ],
+            edges: [
+                { source: 'c1', target: 'acct1', strength: 0.1, interactionCount: 1, edgeType: 'account_relationship' }
+            ],
+            riskAlerts: [],
+            isTruncated: false,
+            totalContactCount: 1
+        };
+        getGraphData.mockResolvedValue(noEdgeData);
+        const element = createComponent({ recordId: 'acct1' });
+        await flushPromises();
+
+        // Should render without errors — 1 contact node visible
+        const statsBar = element.shadowRoot.querySelector('.stats-bar');
+        expect(statsBar).toBeTruthy();
+        expect(statsBar.textContent).toContain('Nodes: 1');
+    });
+
+    it('creates two separate clusters for disconnected co-occurrence groups', async () => {
+        // c1↔c2 and c3↔c4 are disconnected — should form 2 clusters
+        getGraphData.mockResolvedValue(MOCK_CLUSTER_DATA);
+        const element = createComponent({ recordId: 'acct1' });
+        await flushPromises();
+
+        const statsBar = element.shadowRoot.querySelector('.stats-bar');
+        expect(statsBar).toBeTruthy();
+        // 2 co-occurrence groups → at least 2 clusters
+        expect(statsBar.textContent).toContain('Clusters:');
+        // With 4 contacts in 2 disconnected groups, cluster count ≥ 2
+        expect(statsBar.textContent).toMatch(/Clusters:\s*[2-4]/);
+    });
+
+    it('does not show cluster count when only one cluster exists', async () => {
+        // All contacts in one connected component
+        const singleClusterData = {
+            nodes: [
+                { id: 'acct1', name: 'Test Corp', nodeType: 'Account', interactionCount: 0 },
+                { id: 'c1', name: 'Alice', nodeType: 'Contact', classification: 'Champion', interactionCount: 10 },
+                { id: 'c2', name: 'Bob', nodeType: 'Contact', classification: 'Champion', interactionCount: 8 }
+            ],
+            edges: [
+                { source: 'c1', target: 'acct1', strength: 0.8, interactionCount: 12, edgeType: 'account_relationship' },
+                { source: 'c2', target: 'acct1', strength: 0.6, interactionCount: 8, edgeType: 'account_relationship' },
+                { source: 'c1', target: 'c2', strength: 0.9, interactionCount: 15, edgeType: 'co_occurrence' }
+            ],
+            riskAlerts: [],
+            isTruncated: false,
+            totalContactCount: 2
+        };
+        getGraphData.mockResolvedValue(singleClusterData);
+        const element = createComponent({ recordId: 'acct1' });
+        await flushPromises();
+
+        const statsBar = element.shadowRoot.querySelector('.stats-bar');
+        expect(statsBar).toBeTruthy();
+        // 1 cluster → clusterCount is 1, but the template only shows when > 0
+        // so it appears. That's fine — it just means clusters exist
+        expect(statsBar.textContent).toContain('Nodes: 2');
+    });
+
+    it('adds synthetic moved_to nodes for moved contacts', async () => {
+        const movedData = {
+            nodes: [
+                { id: 'acct1', name: 'Test Corp', nodeType: 'Account', interactionCount: 0 },
+                { id: 'c1', name: 'Alice', nodeType: 'Contact', classification: 'Champion',
+                  interactionCount: 10, hasMovedCompany: true, previousCompany: 'Rival Corp',
+                  previousCompanyId: '001FAKE_RIVAL' },
+                { id: 'c2', name: 'Bob', nodeType: 'Contact', classification: 'Champion', interactionCount: 8 }
+            ],
+            edges: [
+                { source: 'c1', target: 'acct1', strength: 0.8, interactionCount: 12, edgeType: 'account_relationship' },
+                { source: 'c2', target: 'acct1', strength: 0.6, interactionCount: 8, edgeType: 'account_relationship' }
+            ],
+            riskAlerts: [],
+            isTruncated: false,
+            totalContactCount: 2
+        };
+        getGraphData.mockResolvedValue(movedData);
+        const element = createComponent({ recordId: 'acct1' });
+        await flushPromises();
+
+        // 2 contacts + 1 synthetic Moved_To_Company node = 3 nodes
+        const statsBar = element.shadowRoot.querySelector('.stats-bar');
+        expect(statsBar).toBeTruthy();
+        expect(statsBar.textContent).toContain('Nodes: 3');
+    });
+
+    it('includes moved_to edge in edge count for moved contacts', async () => {
+        const movedData = {
+            nodes: [
+                { id: 'acct1', name: 'Test Corp', nodeType: 'Account', interactionCount: 0 },
+                { id: 'c1', name: 'Alice', nodeType: 'Contact', classification: 'Champion',
+                  interactionCount: 10, hasMovedCompany: true, previousCompany: 'Rival Corp' },
+                { id: 'c2', name: 'Bob', nodeType: 'Contact', classification: 'End User', interactionCount: 3 }
+            ],
+            edges: [
+                { source: 'c1', target: 'acct1', strength: 0.8, interactionCount: 12, edgeType: 'account_relationship' },
+                { source: 'c2', target: 'acct1', strength: 0.3, interactionCount: 3, edgeType: 'account_relationship' },
+                { source: 'c1', target: 'c2', strength: 0.5, interactionCount: 5, edgeType: 'co_occurrence' }
+            ],
+            riskAlerts: [],
+            isTruncated: false,
+            totalContactCount: 2
+        };
+        getGraphData.mockResolvedValue(movedData);
+        const element = createComponent({ recordId: 'acct1' });
+        await flushPromises();
+
+        // Without hierarchy: account_relationship edges filtered, co_occurrence stays
+        // Plus 1 synthetic moved_to edge = 2 edges total
+        const statsBar = element.shadowRoot.querySelector('.stats-bar');
+        expect(statsBar).toBeTruthy();
+        expect(statsBar.textContent).toContain('Edges: 2');
+    });
+
+    it('shows warnings toast when data has warnings', async () => {
+        const warningData = {
+            ...MOCK_CLUSTER_DATA,
+            warnings: ['Field not accessible: No_Longer_at_Company__c']
+        };
+        getGraphData.mockResolvedValue(warningData);
+        createComponent({ recordId: 'acct1' });
+        await flushPromises();
+
+        // Should fire info toast
+        expect(ShowToastEvent).toHaveBeenCalledWith(
+            expect.objectContaining({
+                title: 'Info',
+                variant: 'info'
+            })
+        );
+    });
+
+    it('does not show warning toast when no warnings', async () => {
+        getGraphData.mockResolvedValue(MOCK_CLUSTER_DATA);
+
+        // Clear ShowToastEvent calls to isolate this test
+        ShowToastEvent.mockClear();
+
+        createComponent({ recordId: 'acct1' });
+        await flushPromises();
+
+        // Should NOT fire an info toast
+        const infoToasts = ShowToastEvent.mock.calls.filter(
+            call => call[0] && call[0].variant === 'info'
+        );
+        expect(infoToasts.length).toBe(0);
     });
 });

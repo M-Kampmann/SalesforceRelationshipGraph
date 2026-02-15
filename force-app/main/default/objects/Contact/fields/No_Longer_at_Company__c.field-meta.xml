@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>No_Longer_at_Company__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>Indicates the contact is no longer at this company.</description>
+    <label>No Longer at Company</label>
+    <type>Checkbox</type>
+</CustomField>

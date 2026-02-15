@@ -19,6 +19,21 @@
     </objectPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Contact.No_Longer_at_Company__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Contact.Previous_Company_Text_c__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Contact.Person_has_moved__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Contact_Classification__c.Confidence_Score__c</field>
         <readable>true</readable>
     </fieldPermissions>

@@ -21,6 +21,12 @@
                     onclick={toggleExternalContacts}
                     variant={showExternalVariant}>
                 </lightning-button>
+                <lightning-button
+                    label={showHierarchyLabel}
+                    icon-name="utility:hierarchy"
+                    onclick={toggleHierarchy}
+                    variant={showHierarchyVariant}>
+                </lightning-button>
             </lightning-button-group>
         </div>
 
@@ -177,6 +183,31 @@
                                 <span class="detail-value">External Contact</span>
                             </p>
                         </template>
+                        <!-- Moved Contact Warning -->
+                        <template if:true={selectedNodeHasMoved}>
+                            <div class="moved-warning">
+                                <lightning-badge label="No Longer at Company" class="moved-badge"></lightning-badge>
+                                <template if:true={selectedNode.previousCompany}>
+                                    <p class="detail-field slds-m-top_x-small">
+                                        <span class="detail-label">Previous Company</span>
+                                        <span class="detail-value">{selectedNode.previousCompany}</span>
+                                    </p>
+                                </template>
+                                <template if:true={selectedNode.movedInfo}>
+                                    <p class="detail-field slds-m-top_x-small">
+                                        <span class="detail-label">Move Info</span>
+                                        <span class="detail-value">{selectedNode.movedInfo}</span>
+                                    </p>
+                                </template>
+                            </div>
+                        </template>
+                        <!-- Hierarchy Account Info -->
+                        <template if:true={isHierarchyAccountNode}>
+                            <p class="detail-field">
+                                <span class="detail-label">Hierarchy</span>
+                                <span class="detail-value">{formattedHierarchyLevel}</span>
+                            </p>
+                        </template>
                         <!-- Opportunity: Stage, Amount, Close Date -->
                         <template if:true={isOpportunityNode}>
                             <p class="detail-field">
@@ -273,6 +304,12 @@
             </template>
             <template if:true={showExternalContacts}>
                 <span>External: {externalContactCount}</span>
+            </template>
+            <template if:true={showHierarchy}>
+                <span>Hierarchy: {hierarchyAccountCount}</span>
+            </template>
+            <template if:true={clusterCount}>
+                <span>Clusters: {clusterCount}</span>
             </template>
             <template if:true={isTruncated}>
                 <span class="truncation-warning">Showing 500 of {totalContactCount}+ contacts</span>
