@@ -762,6 +762,26 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
         return this.selectedNode.closeDate;
     }
 
+    get hasStrengthFactors() {
+        return this.strengthFactors.length > 0;
+    }
+
+    get strengthFactors() {
+        if (!this.selectedNode || !this.selectedNode.strengthFactors) return [];
+        const factors = this.selectedNode.strengthFactors
+            .filter(f => f.contribution > 0)
+            .sort((a, b) => b.contribution - a.contribution);
+        const maxContribution = factors.length > 0
+            ? Math.max(...factors.map(f => f.contribution), 0.01)
+            : 1;
+        return factors.map((f, idx) => ({
+            ...f,
+            key: 'factor-' + idx,
+            formattedContribution: f.contribution.toFixed(1),
+            barStyle: `width: ${Math.min(100, (f.contribution / maxContribution) * 100)}%`
+        }));
+    }
+
     get formattedConfidence() {
         if (!this.selectedNode || !this.selectedNode.confidence) return '0';
         return Math.round(this.selectedNode.confidence * 100);

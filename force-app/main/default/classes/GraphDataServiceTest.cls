@@ -560,4 +560,60 @@ private class GraphDataServiceTest {
         }
         System.assertEquals(0, highAlerts, 'Healthy account should have no high-severity alerts');
     }
+
+    // ─── Strength Factor Breakdown ──────────────────────────────────
+
+    @IsTest
+    static void testStrengthFactorsPopulatedOnNode() {
+        Account acct = [SELECT Id FROM Account WHERE Name = 'Test Corp' LIMIT 1];
+        List<Contact> contacts = [SELECT Id FROM Contact WHERE AccountId = :acct.Id LIMIT 1];
+
+        // Create a strength record with breakdown JSON
+        List<RelationshipStrengthCalculator.FactorBreakdown> breakdown =
+            new List<RelationshipStrengthCalculator.FactorBreakdown>();
+        RelationshipStrengthCalculator.FactorBreakdown fb =
+            new RelationshipStrengthCalculator.FactorBreakdown();
+        fb.name = 'Email Sent';
+        fb.category = 'Activity';
+        fb.rawValue = 10;
+        fb.weight = 1.0;
+        fb.contribution = 10.0;
+        breakdown.add(fb);
+
+        // Update the existing strength record with breakdown
+        Relationship_Strength__c rs = [
+            SELECT Id FROM Relationship_Strength__c
+            WHERE Account__c = :acct.Id
+            AND Source_Contact__c = :contacts[0].Id
+            AND Target_Object_Type__c = 'Account'
+            LIMIT 1
+        ];
+        rs.Strength_Breakdown__c = JSON.serialize(breakdown);
+        update rs;
+
+        GraphDataService service = new GraphDataService();
+
+        Test.startTest();
+        GraphDataService.GraphData graph = service.buildGraphData(
+            acct.Id, false, 0, 90
+        );
+        Test.stopTest();
+
+        // Find the contact node
+        GraphDataService.GraphNode contactNode = null;
+        for (GraphDataService.GraphNode node : graph.nodes) {
+            if (node.id == String.valueOf(contacts[0].Id)) {
+                contactNode = node;
+                break;
+            }
+        }
+
+        System.assert(contactNode != null, 'Should find the contact node');
+        System.assert(contactNode.strengthFactors != null,
+            'strengthFactors should be populated');
+        System.assertEquals(1, contactNode.strengthFactors.size(),
+            'Should have 1 factor breakdown entry');
+        System.assertEquals('Email Sent', contactNode.strengthFactors[0].name);
+        System.assertEquals(10.0, contactNode.strengthFactors[0].contribution);
+    }
 }

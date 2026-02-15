@@ -71,6 +71,30 @@ public with sharing class RelationshipGraphController {
         InteractionDataService.InteractionBundle bundle =
             dataService.fetchInteractionData(accountId, contactIds);
 
+        // Fetch custom factor values (Contact_Field, Record_Count)
+        List<StrengthFactorService.StrengthFactor> allFactors =
+            StrengthFactorService.getActiveFactors();
+        List<StrengthFactorService.StrengthFactor> customFactors =
+            new List<StrengthFactorService.StrengthFactor>();
+        for (StrengthFactorService.StrengthFactor f : allFactors) {
+            if (f.sourceType != 'Interaction') {
+                customFactors.add(f);
+            }
+        }
+        if (!customFactors.isEmpty()) {
+            CustomFactorDataService customService = new CustomFactorDataService();
+            Map<Id, Map<String, Decimal>> customValues = customService.fetchCustomFactors(
+                new Set<Id>(contactIds), customFactors
+            );
+            for (Id cId : customValues.keySet()) {
+                InteractionDataService.ContactInteractionSummary summary =
+                    bundle.contactSummaries.get(cId);
+                if (summary != null) {
+                    summary.customFactors = customValues.get(cId);
+                }
+            }
+        }
+
         // Get config
         Relationship_Graph_Config__mdt config = getConfig();
         Decimal decayFactor = config != null ? config.Time_Decay_Factor__c : 0.95;

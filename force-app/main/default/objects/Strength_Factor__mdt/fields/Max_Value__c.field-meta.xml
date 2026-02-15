@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Max_Value__c</fullName>
+    <description>Optional ceiling for normalization. Raw value is divided by Max Value and capped at 1.0 before multiplying by weight. Leave blank to use the raw value directly.</description>
+    <fieldManageability>SubscriberControlled</fieldManageability>
+    <label>Max Value</label>
+    <precision>10</precision>
+    <required>false</required>
+    <scale>2</scale>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Source_Value__c</fullName>
+    <description>For Interaction: the counter key (email_sent, email_received, meeting, task, opp_role, co_occurrence). For Contact_Field: the field API name (e.g. CSAT_Score__c). For Record_Count: ObjectName.LookupField (e.g. Project__c.Contact__c).</description>
+    <fieldManageability>SubscriberControlled</fieldManageability>
+    <label>Source Value</label>
+    <length>255</length>
+    <required>true</required>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

@@ -306,6 +306,7 @@ public with sharing class InteractionDataService {
         public Integer negativeSignalCount { get; set; }
         public Integer positiveSignalCount { get; set; }
         public Date lastInteractionDate { get; set; }
+        public Map<String, Decimal> customFactors { get; set; }
 
         public ContactInteractionSummary() {
             this.emailsSent = 0;
@@ -317,6 +318,7 @@ public with sharing class InteractionDataService {
             this.hasOpportunityRole = false;
             this.negativeSignalCount = 0;
             this.positiveSignalCount = 0;
+            this.customFactors = new Map<String, Decimal>();
         }
 
         /**

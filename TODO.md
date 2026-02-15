@@ -18,6 +18,8 @@
 - [ ] **Timeline/history mode** — Animate relationship evolution over time using `Last_Interaction_Date__c` and `Last_Classified__c`.
 - [ ] **Contact-to-Contact strength edges** — Co-occurrence data exists in `Relationship_Strength__c` (Target_Object_Type = Contact) but graph only partially renders these. Full internal alliance/silo visualization.
 - [ ] **Influence path finder** — "How do I reach the Economic Buyer?" — shortest path through Champions and Influencers.
+- [ ] **Strength factor analytics** — Dashboard showing which factors contribute most across accounts. Aggregate `Strength_Breakdown__c` JSON data.
+- [ ] **Record_Count factor examples** — Provide example `Strength_Factor__mdt` records for common objects (Cases, Projects, Campaigns) in documentation or as unmanaged package add-on.
 
 ---
 
@@ -248,3 +250,150 @@ Run these after deploying the risk alerts feature. No special prerequisites beyo
 **Expected:**
 - Risk alert count may change (e.g. "No Economic Buyer" alert disappears)
 - Risk panel updates to reflect new state
+
+---
+
+## Production UAT — Configurable Strength Factors
+
+Run these after deploying the configurable strength factors feature.
+
+### Pre-requisites
+
+- [ ] Package deployed successfully (includes `Strength_Factor__mdt` and 6 default records)
+- [ ] Permission set `Relationship_Graph_Admin` assigned to test user
+- [ ] `Strength_Breakdown__c` field visible on `Relationship_Strength__c`
+
+### Test 15: Default Factors Match Previous Behavior
+
+**Steps:**
+1. Navigate to an Account with existing strength data
+2. Click Refresh on the Relationship Graph
+3. Compare scores before and after refresh
+
+**Expected:**
+- Scores are identical or negligibly different (6 default CMT records match original hardcoded weights)
+- No regression in score calculation
+
+### Test 16: Score Breakdown Visible in Detail Panel
+
+**Steps:**
+1. Load the graph for an Account with interaction data
+2. Click on a Contact node with a non-zero strength
+3. Look for the "Score Breakdown" section in the detail panel
+
+**Expected:**
+- Factor breakdown bars appear below "Connection Insight"
+- Each factor shows: name, optional category label, horizontal bar, numeric contribution
+- Factors are sorted by contribution (highest first)
+- Only non-zero factors appear
+
+### Test 17: Change Factor Weight
+
+**Steps:**
+1. Go to Setup > Custom Metadata Types > Strength Factor > Manage Records
+2. Edit `Email_Sent` — change Weight from `1.0` to `5.0`
+3. Return to the Account and click Refresh
+4. Click a Contact with email interactions
+
+**Expected:**
+- Email Sent contribution in the breakdown is noticeably higher
+- Overall strength score changes for contacts with email activity
+- Reset weight to `1.0` after testing
+
+### Test 18: Deactivate a Factor
+
+**Steps:**
+1. Go to Setup > Custom Metadata Types > Strength Factor > Manage Records
+2. Edit `Co_Occurrence` — uncheck `Is_Active__c`
+3. Refresh the graph
+4. Click a Contact that had co-occurrence data
+
+**Expected:**
+- Co-Occurrence no longer appears in the Score Breakdown
+- Overall strength score may decrease slightly
+- Re-activate after testing
+
+### Test 19: Add a Contact_Field Factor (e.g. CSAT/NPS)
+
+**Steps:**
+1. Ensure a numeric field exists on Contact (e.g. `CSAT_Score__c` or use a standard numeric field like `Birthdate` won't work — must be Number/Currency/Percent)
+2. Go to Setup > Custom Metadata Types > Strength Factor > New
+3. Configure:
+   - Label: `CSAT Score`
+   - Source Type: `Contact_Field`
+   - Source Value: `CSAT_Score__c`
+   - Weight: `2.0`
+   - Max Value: `100` (normalizes 0-100 scale to 0-1)
+   - Category: `Satisfaction`
+   - Is Active: checked
+4. Refresh the graph
+
+**Expected:**
+- Contacts with non-null CSAT values show "CSAT Score" in their Score Breakdown
+- Category shows "Satisfaction" under the factor name
+- Bar width reflects the normalized score (e.g. CSAT=80 with Max=100 → 0.8 × 2.0 = 1.6 contribution)
+- Contacts without CSAT data show no CSAT factor in breakdown
+
+### Test 20: Add a Record_Count Factor (e.g. Projects)
+
+**Steps:**
+1. Ensure a custom object with a Contact lookup exists (e.g. `Project__c.Contact__c`)
+2. Go to Setup > Custom Metadata Types > Strength Factor > New
+3. Configure:
+   - Label: `Projects Conducted`
+   - Source Type: `Record_Count`
+   - Source Value: `Project__c.Contact__c`
+   - Weight: `3.0`
+   - Max Value: `10`
+   - Category: `Product Usage`
+   - Is Active: checked
+4. Refresh the graph
+
+**Expected:**
+- Contacts with related Project records show "Projects Conducted" in breakdown
+- Count is normalized by Max Value (e.g. 5 projects / 10 max = 0.5 × 3.0 = 1.5 contribution)
+
+### Test 21: Invalid Factor Configuration Handled Gracefully
+
+**Steps:**
+1. Create a `Contact_Field` factor with Source Value `Nonexistent_Field__c`
+2. Create a `Record_Count` factor with Source Value `Nonexistent_Object__c.Contact__c`
+3. Refresh the graph
+
+**Expected:**
+- Graph loads without errors
+- Invalid factors are silently skipped (no crash, no error toast)
+- Valid factors still appear in the breakdown
+- Clean up invalid records after testing
+
+### Test 22: Max Value Normalization Caps at 1.0
+
+**Steps:**
+1. Create a `Contact_Field` factor with Weight `2.0` and Max Value `50`
+2. Ensure a Contact has the field value set to `100` (exceeds max)
+3. Refresh the graph
+
+**Expected:**
+- Factor's raw value in breakdown shows `100`
+- Contribution is capped: `min(100/50, 1.0) × 2.0 = 2.0` (not 4.0)
+
+### Test 23: Strength Reason Includes Custom Factors
+
+**Steps:**
+1. With custom factors active, click a Contact node
+2. Check the "Connection Insight" text
+
+**Expected:**
+- Built-in interactions listed first (emails, meetings, tasks, etc.)
+- Custom factors appended with name and raw value (e.g. "CSAT Score: 85.0 (Satisfaction)")
+
+### Test 24: Hardcoded Fallback When No CMT Records
+
+**Steps:**
+1. Deactivate ALL 6 default Strength Factor records (uncheck Is_Active on each)
+2. Refresh the graph
+
+**Expected:**
+- Graph still loads with scores calculated using hardcoded fallback weights
+- Scores match original behavior (Email Sent=1.0, Email Received=1.5, Meeting=3.0, etc.)
+- Re-activate all records after testing

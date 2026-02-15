@@ -95,6 +95,15 @@ public with sharing class GraphDataService {
                 }
                 node.lastInteractionDate = rs.Last_Interaction_Date__c;
                 node.strength = rs.Strength__c;
+                if (String.isNotBlank(rs.Strength_Breakdown__c)) {
+                    try {
+                        node.strengthFactors = (List<RelationshipStrengthCalculator.FactorBreakdown>)
+                            JSON.deserialize(rs.Strength_Breakdown__c,
+                                List<RelationshipStrengthCalculator.FactorBreakdown>.class);
+                    } catch (Exception e) {
+                        // Invalid JSON — skip breakdown
+                    }
+                }
             }
 
             includedContactIds.add(c.Id);
@@ -184,7 +193,8 @@ public with sharing class GraphDataService {
 
         for (Relationship_Strength__c rs : [
             SELECT Source_Contact__c, Strength__c, Interaction_Count__c,
-                   Co_Occurrence_Count__c, Last_Interaction_Date__c, Strength_Reason__c
+                   Co_Occurrence_Count__c, Last_Interaction_Date__c, Strength_Reason__c,
+                   Strength_Breakdown__c
             FROM Relationship_Strength__c
             WHERE Account__c = :accountId
             AND Source_Contact__c IN :contactIds
@@ -287,6 +297,7 @@ public with sharing class GraphDataService {
         @AuraEnabled public String strengthReason { get; set; }  // AI-generated explanation
         @AuraEnabled public Datetime lastInteractionDate { get; set; }
         @AuraEnabled public Decimal strength { get; set; }
+        @AuraEnabled public List<RelationshipStrengthCalculator.FactorBreakdown> strengthFactors { get; set; }
 
         public GraphNode(
             Id recordId, String name, String nodeType, String classification,

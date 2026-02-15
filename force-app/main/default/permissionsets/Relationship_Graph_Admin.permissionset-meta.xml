@@ -62,4 +62,9 @@
         <field>Relationship_Strength__c.Strength_Reason__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Relationship_Strength__c.Strength_Breakdown__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
 </PermissionSet>

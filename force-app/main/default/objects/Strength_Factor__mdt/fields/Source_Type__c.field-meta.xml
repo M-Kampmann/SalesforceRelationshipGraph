@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Source_Type__c</fullName>
+    <description>How to retrieve the factor value. Interaction: built-in interaction counter. Contact_Field: numeric field on Contact. Record_Count: count of related child records.</description>
+    <fieldManageability>SubscriberControlled</fieldManageability>
+    <label>Source Type</label>
+    <length>50</length>
+    <required>true</required>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

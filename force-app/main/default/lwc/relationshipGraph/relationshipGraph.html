@@ -192,6 +192,27 @@
                             </p>
                         </template>
 
+                        <!-- Score Breakdown -->
+                        <template if:true={hasStrengthFactors}>
+                            <div class="factor-breakdown">
+                                <span class="detail-label">Score Breakdown</span>
+                                <template for:each={strengthFactors} for:item="factor">
+                                    <div key={factor.key} class="factor-row">
+                                        <div class="factor-info">
+                                            <span class="factor-name">{factor.name}</span>
+                                            <template if:true={factor.category}>
+                                                <span class="factor-category">{factor.category}</span>
+                                            </template>
+                                        </div>
+                                        <div class="factor-bar-container">
+                                            <div class="factor-bar" style={factor.barStyle}></div>
+                                        </div>
+                                        <span class="factor-value">{factor.formattedContribution}</span>
+                                    </div>
+                                </template>
+                            </div>
+                        </template>
+
                         <!-- Classification Override -->
                         <template if:true={isContactNode}>
                             <div class="override-section">
