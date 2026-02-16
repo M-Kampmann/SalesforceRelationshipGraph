@@ -1215,3 +1215,40 @@ describe('clustering and account node removal', () => {
         expect(infoToasts.length).toBe(0);
     });
 });
+
+describe('search and export', () => {
+    beforeEach(() => {
+        sessionStorage.clear();
+        getGraphConfig.mockResolvedValue(MOCK_CONFIG);
+        getGraphData.mockResolvedValue(MOCK_GRAPH_DATA);
+        refreshGraphData.mockResolvedValue(MOCK_GRAPH_DATA);
+        loadScript.mockResolvedValue();
+    });
+
+    it('renders search input in filter legend', async () => {
+        const element = createComponent({ recordId: 'acct1' });
+        await flushPromises();
+
+        const searchInput = element.shadowRoot.querySelector('.search-control');
+        expect(searchInput).toBeTruthy();
+        expect(searchInput.type).toBe('search');
+    });
+
+    it('initializes with empty search term', async () => {
+        const element = createComponent({ recordId: 'acct1' });
+        await flushPromises();
+
+        const searchInput = element.shadowRoot.querySelector('.search-control');
+        expect(searchInput).toBeTruthy();
+        expect(searchInput.value).toBeFalsy();
+    });
+
+    it('renders Export button in toolbar', async () => {
+        const element = createComponent({ recordId: 'acct1' });
+        await flushPromises();
+
+        const buttons = element.shadowRoot.querySelectorAll('lightning-button');
+        const exportBtn = Array.from(buttons).find(b => b.label === 'Export');
+        expect(exportBtn).toBeTruthy();
+    });
+});

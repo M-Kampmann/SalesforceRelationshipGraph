@@ -15,7 +15,7 @@ public with sharing class RelationshipGraphController {
      * Get graph data for an account.
      * Checks Platform Cache first, falls back to fresh computation.
      */
-    @AuraEnabled(cacheable=true)
+    @AuraEnabled
     public static GraphDataService.GraphData getGraphData(
         Id accountId,
         Boolean hidePassive,
@@ -371,12 +371,13 @@ public with sharing class RelationshipGraphController {
         return count;
     }
 
+    @TestVisible
     private static String buildCacheKey(Id accountId, Boolean hidePassive, Integer minInteractions, Boolean showExternalContacts, Boolean showHierarchy) {
-        return 'graph_' + String.valueOf(accountId).left(15)
-            + '_' + (hidePassive ? '1' : '0')
-            + '_' + minInteractions
-            + (showExternalContacts == true ? '_ext' : '')
-            + (showHierarchy == true ? '_hier' : '');
+        return 'graph' + String.valueOf(accountId).left(15)
+            + (hidePassive ? '1' : '0')
+            + minInteractions
+            + (showExternalContacts == true ? 'ext' : '')
+            + (showHierarchy == true ? 'hier' : '');
     }
 
     private static GraphDataService.GraphData getCachedGraphData(String cacheKey) {

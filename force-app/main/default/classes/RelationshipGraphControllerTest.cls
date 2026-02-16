@@ -376,4 +376,26 @@ private class RelationshipGraphControllerTest {
         System.assertEquals(resultNull.nodes.size(), resultFalse.nodes.size(),
             'null and false showHierarchy should produce same node count');
     }
+
+    @IsTest
+    static void testCacheKeyIsAlphanumeric() {
+        Account acct = [SELECT Id FROM Account WHERE Name = 'Test Corp' LIMIT 1];
+        String key = RelationshipGraphController.buildCacheKey(
+            acct.Id, true, 3, true, true
+        );
+        System.assert(key.isAlphanumeric(),
+            'Cache key must be alphanumeric for Platform Cache: ' + key);
+    }
+
+    @IsTest
+    static void testCacheKeyUniqueness() {
+        Account acct = [SELECT Id FROM Account WHERE Name = 'Test Corp' LIMIT 1];
+        String key1 = RelationshipGraphController.buildCacheKey(acct.Id, true, 3, false, false);
+        String key2 = RelationshipGraphController.buildCacheKey(acct.Id, false, 3, false, false);
+        String key3 = RelationshipGraphController.buildCacheKey(acct.Id, true, 3, true, false);
+        String key4 = RelationshipGraphController.buildCacheKey(acct.Id, true, 3, false, true);
+        System.assertNotEquals(key1, key2, 'Different hidePassive should produce different keys');
+        System.assertNotEquals(key1, key3, 'Different showExternalContacts should produce different keys');
+        System.assertNotEquals(key1, key4, 'Different showHierarchy should produce different keys');
+    }
 }

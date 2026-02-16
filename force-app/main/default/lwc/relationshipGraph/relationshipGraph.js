@@ -68,7 +68,12 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
     nodes = [];
     edges = [];
     hoveredNode = null;
+    hoveredEdge = null;
     draggedNode = null;
+    searchTerm = '';
+    searchMatchIds = new Set();
+    _isExporting = false;
+    _minimapBounds = null;
     width = 0;
     height = 0;
     animationFrame = null;
@@ -294,14 +299,14 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
 
     computeClusters() {
         const CLUSTER_HULL_COLORS = [
-            'rgba(33, 150, 243, 0.08)',
-            'rgba(76, 175, 80, 0.08)',
-            'rgba(255, 152, 0, 0.08)',
-            'rgba(156, 39, 176, 0.08)',
-            'rgba(0, 150, 136, 0.08)',
-            'rgba(244, 67, 54, 0.08)',
-            'rgba(121, 85, 72, 0.08)',
-            'rgba(63, 81, 181, 0.08)'
+            'rgba(33, 150, 243, 0.15)',
+            'rgba(76, 175, 80, 0.15)',
+            'rgba(255, 152, 0, 0.15)',
+            'rgba(156, 39, 176, 0.15)',
+            'rgba(0, 150, 136, 0.15)',
+            'rgba(244, 67, 54, 0.15)',
+            'rgba(121, 85, 72, 0.15)',
+            'rgba(63, 81, 181, 0.15)'
         ];
 
         // Build adjacency list from co-occurrence edges
@@ -590,14 +595,14 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
                 ctx.closePath();
                 ctx.fillStyle = cluster.color;
                 ctx.fill();
-                ctx.strokeStyle = cluster.color.replace('0.08', '0.15');
+                ctx.strokeStyle = cluster.color.replace('0.15', '0.3');
                 ctx.lineWidth = 1;
                 ctx.stroke();
 
                 // Cluster label above the hull
                 const topPoint = hull.reduce((top, p) => p[1] < top[1] ? p : top, hull[0]);
-                ctx.font = 'bold 11px sans-serif';
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+                ctx.font = 'bold 12px sans-serif';
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
                 ctx.textAlign = 'center';
                 ctx.fillText(cluster.label, cx, topPoint[1] - padding - 5);
             }
@@ -619,10 +624,18 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
             this.drawTooltip(ctx, this.hoveredNode);
         }
 
+        // Draw hovered edge tooltip
+        if (this.hoveredEdge && !this.hoveredNode) {
+            this.drawEdgeTooltip(ctx, this.hoveredEdge);
+        }
+
         ctx.restore();
 
-        // Draw fixed legend (not affected by zoom/pan)
-        this.drawLegend(ctx);
+        // Draw fixed UI elements (not affected by zoom/pan, skip during export)
+        if (!this._isExporting) {
+            this.drawLegend(ctx);
+            this.drawMinimap(ctx);
+        }
     }
 
     drawEdge(ctx, edge) {
@@ -772,6 +785,16 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
             ctx.setLineDash([]);
         }
 
+        // Search match highlight
+        if (this.searchMatchIds.has(node.id)) {
+            ctx.globalAlpha = 1;
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, radius + 7, 0, 2 * Math.PI);
+            ctx.strokeStyle = '#0176d3';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+        }
+
         ctx.restore();
 
         // Node label
@@ -878,6 +901,44 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
         });
     }
 
+    drawEdgeTooltip(ctx, edge) {
+        const midX = (edge.source.x + edge.target.x) / 2;
+        const midY = (edge.source.y + edge.target.y) / 2;
+
+        const typeLabels = {
+            'co_occurrence': 'Co-occurrence',
+            'account_relationship': 'Account Relationship',
+            'opportunity_role': 'Opportunity Role',
+            'cross_account': 'Cross-Account',
+            'hierarchy': 'Hierarchy',
+            'moved_to': 'Moved To'
+        };
+        const lines = [typeLabels[edge.edgeType] || edge.edgeType];
+        if (edge.label) lines.push('Role: ' + edge.label);
+        if (edge.interactionCount) lines.push(edge.interactionCount + ' interactions');
+        if (edge.strength) lines.push('Strength: ' + (edge.strength * 100).toFixed(0) + '%');
+
+        const padding = 8;
+        const lineHeight = 16;
+        ctx.font = '11px sans-serif';
+        const tooltipWidth = Math.max(...lines.map(l => ctx.measureText(l).width)) + padding * 2;
+        const tooltipHeight = lines.length * lineHeight + padding * 2;
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+        ctx.strokeStyle = '#ddd';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(midX + 10, midY - tooltipHeight / 2, tooltipWidth, tooltipHeight, 4);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#333';
+        ctx.textAlign = 'left';
+        lines.forEach((line, i) => {
+            ctx.fillText(line, midX + 10 + padding, midY - tooltipHeight / 2 + padding + (i + 1) * lineHeight - 4);
+        });
+    }
+
     drawLegend(ctx) {
         // Only show legend items relevant to the current graph
         const legendItems = [];
@@ -964,6 +1025,69 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
         });
     }
 
+    drawMinimap(ctx) {
+        if (this.nodes.length === 0) return;
+
+        const mmW = 150, mmH = 100;
+        const mmX = this.width - mmW - 12;
+        const mmY = this.height - mmH - 12;
+
+        // Background
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.strokeStyle = '#ccc';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(mmX, mmY, mmW, mmH, 4);
+        ctx.fill();
+        ctx.stroke();
+
+        // Compute world bounds
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const n of this.nodes) {
+            if (n.x < minX) minX = n.x;
+            if (n.y < minY) minY = n.y;
+            if (n.x > maxX) maxX = n.x;
+            if (n.y > maxY) maxY = n.y;
+        }
+        const pad = 50;
+        minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+        const worldW = maxX - minX || 1;
+        const worldH = maxY - minY || 1;
+        const scale = Math.min((mmW - 8) / worldW, (mmH - 8) / worldH);
+        const offX = mmX + 4 + ((mmW - 8) - worldW * scale) / 2;
+        const offY = mmY + 4 + ((mmH - 8) - worldH * scale) / 2;
+
+        // Draw node dots
+        for (const n of this.nodes) {
+            const dx = offX + (n.x - minX) * scale;
+            const dy = offY + (n.y - minY) * scale;
+            ctx.beginPath();
+            ctx.arc(dx, dy, 2, 0, 2 * Math.PI);
+            ctx.fillStyle = n.color || '#999';
+            ctx.fill();
+        }
+
+        // Draw viewport rectangle
+        const vpLeft = (0 - this.transform.x) / this.transform.k;
+        const vpTop = (0 - this.transform.y) / this.transform.k;
+        const vpRight = (this.width - this.transform.x) / this.transform.k;
+        const vpBottom = (this.height - this.transform.y) / this.transform.k;
+
+        const rx = offX + (vpLeft - minX) * scale;
+        const ry = offY + (vpTop - minY) * scale;
+        const rw = (vpRight - vpLeft) * scale;
+        const rh = (vpBottom - vpTop) * scale;
+
+        ctx.strokeStyle = '#0176d3';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(
+            Math.max(mmX, rx), Math.max(mmY, ry),
+            Math.min(rw, mmW), Math.min(rh, mmH)
+        );
+
+        this._minimapBounds = { mmX, mmY, mmW, mmH, minX, minY, worldW, worldH, scale, offX, offY };
+    }
+
     // ─── Node Styling ───────────────────────────────────────────────
 
     getNodeRadius(node) {
@@ -1012,6 +1136,11 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
             return '#e0e0e0'; // Dimmed for filtered-out classifications
         }
 
+        // Search filter dimming
+        if (this.searchTerm.length >= 2 && !this.searchMatchIds.has(node.id)) {
+            return '#e0e0e0';
+        }
+
         return CLASSIFICATION_COLORS[node.classification] || CLASSIFICATION_COLORS['Unknown'];
     }
 
@@ -1038,11 +1167,13 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
             return;
         }
 
-        // Hit test for hover
+        // Hit test for hover (nodes first, then edges)
         const node = this.findNodeAt(x, y);
-        if (node !== this.hoveredNode) {
+        const edge = node ? null : this.findEdgeAt(x, y);
+        if (node !== this.hoveredNode || edge !== this.hoveredEdge) {
             this.hoveredNode = node;
-            this.canvas.style.cursor = node ? 'pointer' : 'default';
+            this.hoveredEdge = edge;
+            this.canvas.style.cursor = (node || edge) ? 'pointer' : 'default';
             this.renderCanvas();
         }
     }
@@ -1080,8 +1211,25 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
 
     handleCanvasClick(event) {
         const rect = this.canvas.getBoundingClientRect();
-        const x = (event.clientX - rect.left - this.transform.x) / this.transform.k;
-        const y = (event.clientY - rect.top - this.transform.y) / this.transform.k;
+        const rawX = event.clientX - rect.left;
+        const rawY = event.clientY - rect.top;
+
+        // Check minimap click (raw screen coords)
+        if (this._minimapBounds) {
+            const mm = this._minimapBounds;
+            if (rawX >= mm.mmX && rawX <= mm.mmX + mm.mmW &&
+                rawY >= mm.mmY && rawY <= mm.mmY + mm.mmH) {
+                const worldX = mm.minX + (rawX - mm.offX) / mm.scale;
+                const worldY = mm.minY + (rawY - mm.offY) / mm.scale;
+                this.transform.x = this.width / 2 - worldX * this.transform.k;
+                this.transform.y = this.height / 2 - worldY * this.transform.k;
+                this.renderCanvas();
+                return;
+            }
+        }
+
+        const x = (rawX - this.transform.x) / this.transform.k;
+        const y = (rawY - this.transform.y) / this.transform.k;
 
         const node = this.findNodeAt(x, y);
         if (node) {
@@ -1129,6 +1277,24 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
             if (dx * dx + dy * dy < node.radius * node.radius) {
                 return node;
             }
+        }
+        return null;
+    }
+
+    findEdgeAt(x, y) {
+        const threshold = 6;
+        for (let i = this.edges.length - 1; i >= 0; i--) {
+            const edge = this.edges[i];
+            const sx = edge.source.x, sy = edge.source.y;
+            const tx = edge.target.x, ty = edge.target.y;
+            const dx = tx - sx, dy = ty - sy;
+            const lenSq = dx * dx + dy * dy;
+            if (lenSq === 0) continue;
+            let t = ((x - sx) * dx + (y - sy) * dy) / lenSq;
+            t = Math.max(0, Math.min(1, t));
+            const cx = sx + t * dx, cy = sy + t * dy;
+            const dist = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2);
+            if (dist < threshold) return edge;
         }
         return null;
     }
@@ -1195,6 +1361,31 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
         this.nodes.forEach(n => {
             n.color = this.getNodeColor(n);
         });
+        this.renderCanvas();
+    }
+
+    handleSearchInput(event) {
+        this.searchTerm = event.detail.value || '';
+        this.searchMatchIds = new Set();
+
+        if (this.searchTerm.length >= 2) {
+            const term = this.searchTerm.toLowerCase();
+            for (const node of this.nodes) {
+                if (node.name && node.name.toLowerCase().includes(term)) {
+                    this.searchMatchIds.add(node.id);
+                }
+            }
+            // Auto-center on single match
+            if (this.searchMatchIds.size === 1) {
+                const matchId = [...this.searchMatchIds][0];
+                const node = this.nodes.find(n => n.id === matchId);
+                if (node) {
+                    this.transform.x = this.width / 2 - node.x * this.transform.k;
+                    this.transform.y = this.height / 2 - node.y * this.transform.k;
+                }
+            }
+        }
+        this.nodes.forEach(n => { n.color = this.getNodeColor(n); });
         this.renderCanvas();
     }
 
@@ -1273,6 +1464,82 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
         this.transform.y = centerY - (centerY - this.transform.y) * (newK / this.transform.k);
         this.transform.k = newK;
         this.renderCanvas();
+    }
+
+    handleExport() {
+        if (!this.canvas || !this.ctx) return;
+
+        // Compute bounding box of all nodes
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const node of this.nodes) {
+            const r = node.radius + 20;
+            if (node.x - r < minX) minX = node.x - r;
+            if (node.y - r < minY) minY = node.y - r;
+            if (node.x + r > maxX) maxX = node.x + r;
+            if (node.y + r + 30 > maxY) maxY = node.y + r + 30;
+        }
+
+        const padding = 60;
+        minX -= padding; minY -= padding;
+        maxX += padding; maxY += padding;
+
+        const exportWidth = Math.max(maxX - minX, 800);
+        const exportHeight = Math.max(maxY - minY, 600);
+
+        // Create offscreen canvas
+        const offscreen = document.createElement('canvas');
+        offscreen.width = exportWidth;
+        offscreen.height = exportHeight;
+        const offCtx = offscreen.getContext('2d');
+
+        // White background
+        offCtx.fillStyle = '#ffffff';
+        offCtx.fillRect(0, 0, exportWidth, exportHeight);
+
+        // Swap context for rendering
+        const origCtx = this.ctx;
+        const origWidth = this.width;
+        const origHeight = this.height;
+        const savedTransform = { ...this.transform };
+        const savedHovered = this.hoveredNode;
+        const savedHoveredEdge = this.hoveredEdge;
+
+        this.ctx = offCtx;
+        this.width = exportWidth;
+        this.height = exportHeight;
+        this.transform = { x: -minX, y: -minY, k: 1 };
+        this.hoveredNode = null;
+        this.hoveredEdge = null;
+        this._isExporting = true;
+
+        this.renderCanvas();
+
+        // Restore
+        this._isExporting = false;
+        this.ctx = origCtx;
+        this.width = origWidth;
+        this.height = origHeight;
+        this.transform = savedTransform;
+        this.hoveredNode = savedHovered;
+        this.hoveredEdge = savedHoveredEdge;
+        this.renderCanvas();
+
+        // Download
+        offscreen.toBlob((blob) => {
+            if (!blob) {
+                this.showError('Failed to export graph');
+                return;
+            }
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = (this._accountName || 'relationship-graph') + '-graph.png';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            this.showToast('Success', 'Graph exported as PNG', 'success');
+        }, 'image/png');
     }
 
     navigateToRecord() {

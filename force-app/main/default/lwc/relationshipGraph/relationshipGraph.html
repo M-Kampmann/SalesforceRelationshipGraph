@@ -27,6 +27,12 @@
                     onclick={toggleHierarchy}
                     variant={showHierarchyVariant}>
                 </lightning-button>
+                <lightning-button
+                    label="Export"
+                    icon-name="utility:download"
+                    onclick={handleExport}
+                    disabled={isLoading}>
+                </lightning-button>
             </lightning-button-group>
         </div>
 
@@ -48,6 +54,14 @@
                     External ({externalContactCount})
                 </span>
             </template>
+            <lightning-input
+                class="search-control"
+                type="search"
+                placeholder="Search contacts..."
+                value={searchTerm}
+                onchange={handleSearchInput}
+                variant="label-hidden">
+            </lightning-input>
             <lightning-input
                 class="threshold-control"
                 type="number"
