@@ -498,15 +498,17 @@ describe('c-relationship-graph', () => {
 
     // ─── Slider / Threshold ──────────────────────────────────────
 
-    it('renders threshold input', async () => {
+    it('renders threshold slider', async () => {
         const element = createComponent({ recordId: '001xx000003DGbYAAW' });
         await flushPromises();
 
-        const input = element.shadowRoot.querySelector('.threshold-control');
-        expect(input).toBeTruthy();
-        expect(input.type).toBe('number');
-        expect(input.min).toBe('0');
-        expect(input.max).toBe('20');
+        const container = element.shadowRoot.querySelector('.threshold-control');
+        expect(container).toBeTruthy();
+        const slider = container.querySelector('.threshold-slider');
+        expect(slider).toBeTruthy();
+        expect(slider.type).toBe('range');
+        expect(slider.min).toBe('0');
+        expect(slider.max).toBe('20');
     });
 
     // ─── Detail Panel ────────────────────────────────────────────
@@ -1250,5 +1252,51 @@ describe('search and export', () => {
         const buttons = element.shadowRoot.querySelectorAll('lightning-button');
         const exportBtn = Array.from(buttons).find(b => b.label === 'Export');
         expect(exportBtn).toBeTruthy();
+    });
+});
+
+describe('zoom controls', () => {
+    beforeEach(() => {
+        sessionStorage.clear();
+        getGraphConfig.mockResolvedValue(MOCK_CONFIG);
+        getGraphData.mockResolvedValue(MOCK_GRAPH_DATA);
+        refreshGraphData.mockResolvedValue(MOCK_GRAPH_DATA);
+        loadScript.mockResolvedValue();
+    });
+
+    it('renders fullscreen button in zoom controls', async () => {
+        const element = createComponent({ recordId: 'acct1' });
+        await flushPromises();
+
+        const zoomControls = element.shadowRoot.querySelector('.zoom-controls');
+        expect(zoomControls).toBeTruthy();
+        const buttons = zoomControls.querySelectorAll('lightning-button-icon');
+        // Zoom in, Zoom out, Reset, Fullscreen = 4 buttons
+        expect(buttons.length).toBe(4);
+    });
+
+    it('fullscreen button has expand icon by default', async () => {
+        const element = createComponent({ recordId: 'acct1' });
+        await flushPromises();
+
+        const zoomControls = element.shadowRoot.querySelector('.zoom-controls');
+        const buttons = zoomControls.querySelectorAll('lightning-button-icon');
+        const fullscreenBtn = buttons[3]; // last button
+        expect(fullscreenBtn.iconName).toBe('utility:expand');
+        expect(fullscreenBtn.alternativeText).toBe('Full screen');
+    });
+
+    it('renders threshold slider with range type', async () => {
+        const element = createComponent({ recordId: 'acct1' });
+        await flushPromises();
+
+        const container = element.shadowRoot.querySelector('.threshold-control');
+        expect(container).toBeTruthy();
+        const label = container.querySelector('.threshold-label');
+        expect(label).toBeTruthy();
+        expect(label.textContent).toContain('Min:');
+        const slider = container.querySelector('.threshold-slider');
+        expect(slider).toBeTruthy();
+        expect(slider.type).toBe('range');
     });
 });

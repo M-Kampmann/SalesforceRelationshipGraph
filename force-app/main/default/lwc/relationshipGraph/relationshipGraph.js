@@ -73,6 +73,7 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
     searchTerm = '';
     searchMatchIds = new Set();
     _isExporting = false;
+    _isFullscreen = false;
     _minimapBounds = null;
     width = 0;
     height = 0;
@@ -138,6 +139,9 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
         }
         if (this.simulation) {
             this.simulation.stop();
+        }
+        if (this._boundFullscreenChange) {
+            document.removeEventListener('fullscreenchange', this._boundFullscreenChange);
         }
     }
 
@@ -1340,7 +1344,7 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
     }
 
     handleThresholdChange(event) {
-        this.minInteractions = event.detail.value;
+        this.minInteractions = parseInt(event.target.value, 10) || 0;
         this._saveToggleState();
         // Debounce: reload after user stops sliding
         clearTimeout(this._thresholdTimeout);
@@ -1454,6 +1458,32 @@ export default class RelationshipGraph extends NavigationMixin(LightningElement)
     handleZoomReset() {
         this.transform = { x: 0, y: 0, k: 1 };
         this.renderCanvas();
+    }
+
+    get fullscreenIcon() {
+        return this._isFullscreen ? 'utility:contract' : 'utility:expand';
+    }
+
+    get fullscreenLabel() {
+        return this._isFullscreen ? 'Exit full screen' : 'Full screen';
+    }
+
+    handleToggleFullscreen() {
+        const container = this.template.querySelector('.graph-container');
+        if (!container) return;
+
+        if (!this._boundFullscreenChange) {
+            this._boundFullscreenChange = () => {
+                this._isFullscreen = !!document.fullscreenElement;
+            };
+            document.addEventListener('fullscreenchange', this._boundFullscreenChange);
+        }
+
+        if (document.fullscreenElement) {
+            document.exitFullscreen();
+        } else {
+            container.requestFullscreen();
+        }
     }
 
     _applyZoom(factor) {

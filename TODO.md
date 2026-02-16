@@ -2,7 +2,7 @@
 
 ## UI Issues
 
-- [ ] **Min Interactions control overlaps detail panel** — The `lightning-slider` had an internal minimum width that CSS couldn't override. Replaced with `lightning-input type="number"` but that's worse UX. Need a better approach — options: move to a popover/menu, put on its own row below filters, or use a custom range input without SLDS constraints.
+- [x] **Min Interactions control overlaps detail panel** — Resolved: replaced `lightning-input type="number"` with a native `<input type="range">` slider. Compact, no SLDS width constraints, shows "Min: {value}" label inline.
 
 ## Known Limitations
 
@@ -532,3 +532,86 @@ Run these after deploying the external contacts feature. Requires Email-to-Sales
 - Cached and non-cached views show different data
 - External toggle correctly triggers separate cache entries
 - No stale data between toggled views
+
+---
+
+## Production UAT — Fullscreen, Slider, Search, Minimap & Export
+
+Run these after deploying the UX improvements. No special prerequisites.
+
+### Test 35: Fullscreen Toggle
+
+**Steps:**
+1. Open the Relationship Graph component on an Account
+2. Look at the zoom controls (bottom-left of the graph)
+3. Click the expand icon (4th button, below Reset)
+
+**Expected:**
+- Graph container fills the entire screen (browser fullscreen mode)
+- Zoom controls, detail panel, and risk panel remain visible
+- Icon changes to contract icon
+- Click the contract icon to exit fullscreen
+- Press Escape to exit fullscreen
+
+### Test 36: Min Interactions Slider
+
+**Steps:**
+1. Open the Relationship Graph
+2. Locate the "Min: 3" slider in the filter legend bar (top-right)
+3. Drag the slider from 3 to 0
+
+**Expected:**
+- Label updates in real-time showing "Min: 0"
+- Graph reloads with more contacts visible (lower threshold)
+- Drag to 10 — fewer contacts remain
+- Slider range is 0–20 with step 1
+- Graph reload is debounced (waits 500ms after last change)
+
+### Test 37: Contact Search
+
+**Steps:**
+1. Open the Relationship Graph on an Account with 5+ contacts
+2. Type a contact's name in the search box (filter legend bar)
+
+**Expected:**
+- Matching nodes are highlighted with a blue ring
+- Non-matching nodes are dimmed (gray)
+- Single match auto-centers the canvas on that node
+- Clear the search box to restore all node colors
+
+### Test 38: Edge Tooltips
+
+**Steps:**
+1. Hover the mouse over an edge (line) between two nodes
+
+**Expected:**
+- A tooltip appears at the edge midpoint showing:
+  - Edge type (e.g., "co_occurrence", "opportunity_role")
+  - Interaction count
+  - Strength value
+- Tooltip disappears when mouse moves away
+
+### Test 39: Minimap
+
+**Steps:**
+1. Open a graph with enough nodes to require scrolling/panning
+2. Look at the bottom-right corner of the graph
+
+**Expected:**
+- A small 150×100 minimap appears showing all node positions as dots
+- A semi-transparent rectangle shows the current viewport
+- Click on the minimap to pan the main view to that position
+- Minimap updates when zooming or panning
+
+### Test 40: PNG Export
+
+**Steps:**
+1. Open the Relationship Graph
+2. Click the "Export" button in the toolbar
+
+**Expected:**
+- A PNG file downloads automatically
+- Filename is `{AccountName}-graph.png`
+- Image shows the full graph at high resolution
+- No minimap or legend overlay in the exported image
+- White background

@@ -62,17 +62,18 @@
                 onchange={handleSearchInput}
                 variant="label-hidden">
             </lightning-input>
-            <lightning-input
-                class="threshold-control"
-                type="number"
-                label="Min"
-                min="0"
-                max="20"
-                value={minInteractions}
-                onchange={handleThresholdChange}
-                step="1"
-                variant="label-inline">
-            </lightning-input>
+            <div class="threshold-control">
+                <span class="threshold-label">Min: {minInteractions}</span>
+                <input
+                    type="range"
+                    class="threshold-slider"
+                    min="0"
+                    max="20"
+                    step="1"
+                    value={minInteractions}
+                    oninput={handleThresholdChange}
+                />
+            </div>
         </div>
 
         <!-- Main Content -->
@@ -107,6 +108,13 @@
                     icon-name="utility:home"
                     alternative-text="Reset zoom"
                     onclick={handleZoomReset}
+                    size="small"
+                    variant="border-filled">
+                </lightning-button-icon>
+                <lightning-button-icon
+                    icon-name={fullscreenIcon}
+                    alternative-text={fullscreenLabel}
+                    onclick={handleToggleFullscreen}
                     size="small"
                     variant="border-filled">
                 </lightning-button-icon>
